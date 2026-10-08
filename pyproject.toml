@@ -1,0 +1,23 @@
+[project]
+name = "jarvis"
+version = "0.1.0"
+description = "Modular personal assistant foundation"
+requires-python = ">=3.11"
+dependencies = ["yt-dlp>=2025.1.15", "selenium>=4.30", "PyAutoGUI>=0.9.54", "pyperclip>=1.9"]
+
+[project.scripts]
+jarvis = "jarvis.cli:main"
+jarvis-ui = "jarvis.ui.app:main"
+
+[project.optional-dependencies]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
