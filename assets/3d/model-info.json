@@ -1,0 +1,37 @@
+{
+  "triangles": 44544,
+  "vertices": 55894,
+  "objects": [
+    "OuterRing",
+    "InnerRing",
+    "Core",
+    "GlassShell"
+  ],
+  "materials": [
+    "graphite",
+    "armor",
+    "silver",
+    "edge",
+    "fastener",
+    "cyan",
+    "cyan_dim",
+    "grid",
+    "heart",
+    "spark",
+    "circuit",
+    "glass"
+  ],
+  "pivot": [
+    0,
+    0,
+    0
+  ],
+  "units": "meters (outer diameter approximately 4.2)",
+  "static": "jarvis-core.glb",
+  "animated": "jarvis-core-animated.glb",
+  "animation": "Idle_24s",
+  "textureSize": [
+    2048,
+    1024
+  ]
+}

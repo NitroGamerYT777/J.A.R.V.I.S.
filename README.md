@@ -111,6 +111,8 @@ Browser Agent o'zining alohida Chrome profilini ishlatadi. Selenium Manager biri
 
 ## Yo‘l xaritasi
 
+Rasmlar asosida qayta qurilgan **JARVIS 3D modeli** va aylantiriladigan lokal preview `assets/3d/` ichida tayyor. Ko'rish uchun `python scripts/preview_jarvis_core.py` ni ishga tushirib, `http://127.0.0.1:8766` manzilini oching. Statik va animatsiyali GLB fayllari, teksturalar hamda qayta yaratish yo'riqnomasi [3D model hujjati](assets/3d/README.md)da. Model hali asosiy Tkinter oynasiga ulanmagan.
+
 1. Matnli buyruqlar va lokal xotira — tayyor.
 2. Ovozli kirish/chiqish (STT/TTS).
 3. Kalendar, fayllar, brauzer, aqlli uy va bildirishnomalar uchun alohida modullar.

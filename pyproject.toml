@@ -11,6 +11,7 @@ jarvis-ui = "jarvis.ui.app:main"
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
+assets = ["numpy>=2", "Pillow>=10.4"]
 
 [build-system]
 requires = ["setuptools>=68"]

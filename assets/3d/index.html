@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="uz">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>JARVIS · 3D Core</title>
+  <style>
+    :root{color-scheme:dark;--cyan:#5ce5f5;--muted:#6a8596;--line:#1b303f}
+    *{box-sizing:border-box}body{margin:0;background:#060c12;color:#c5d8e3;font:13px/1.5 system-ui,sans-serif;overflow:hidden}
+    canvas{display:block;width:100%;height:100%}#scene{position:fixed;inset:0}
+    header{position:fixed;top:28px;left:36px;right:36px;display:flex;justify-content:space-between;align-items:center;pointer-events:none}
+    .brand{font-size:23px;font-weight:500;letter-spacing:9px;color:#e4f8fc}.eyebrow{font:10px/1.8 ui-monospace,monospace;letter-spacing:3px;color:var(--muted)}
+    .online{display:flex;align-items:center;gap:9px;font:10px ui-monospace,monospace;letter-spacing:2px}.dot{width:5px;height:5px;border-radius:50%;background:#5ed6ad;box-shadow:0 0 10px #5ed6ad80}
+    .info{position:fixed;left:36px;top:145px;width:210px}.rule{height:1px;background:linear-gradient(90deg,#345366,transparent);margin:15px 0}.info h1{font-size:14px;font-weight:500;margin:9px 0;letter-spacing:.5px}.info p{font-size:11px;color:var(--muted);max-width:175px;margin:5px 0 20px}
+    .measure{display:flex;justify-content:space-between;margin:8px 0;font:10px ui-monospace,monospace;color:#6a8596}.measure b{font-weight:400;color:#b5d2df}
+    .panel{position:fixed;right:36px;bottom:80px;width:234px;padding:18px;border:1px solid #1b303f;background:#09121bdb;backdrop-filter:blur(18px);border-radius:12px}
+    .states{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:13px}button,a.download{font:11px system-ui,sans-serif;border:1px solid #243c4a;background:#0d1a24;color:#9db8c7;padding:9px 10px;border-radius:6px;cursor:pointer;transition:.15s}
+    button:hover,a.download:hover{border-color:#47899d;color:#d3faff}button.active{background:#12313e;border-color:#3c8b9f;color:#83efff}
+    .options{display:flex;justify-content:space-between;gap:7px;margin-top:12px}.options button{flex:1}.note{color:#587383;font-size:10px;margin:12px 0 0}
+    .views{display:flex;gap:6px;margin-top:14px}.views button{padding:6px 10px}
+    footer{position:fixed;left:36px;right:36px;bottom:25px;display:flex;justify-content:space-between;align-items:center;border-top:1px solid #172833;padding-top:15px;font:10px ui-monospace,monospace;color:#607e90;letter-spacing:1px}
+    a.download{text-decoration:none;letter-spacing:1px;padding:7px 12px;margin-left:7px}#loader{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);color:var(--cyan);letter-spacing:3px;font:11px ui-monospace,monospace;text-align:center;max-width:500px}
+    #loader:before{content:'';display:block;margin:0 auto 20px;width:35px;height:35px;border:1px solid #234855;border-top-color:var(--cyan);border-radius:50%;animation:spin 1s linear infinite}@keyframes spin{to{transform:rotate(360deg)}}
+    .capture header,.capture .info,.capture .panel,.capture footer{display:none}
+    @media(max-width:850px){.info{display:none}.panel{right:18px;bottom:75px;width:210px}header{left:22px;right:22px}.online{display:none}footer{left:22px;right:22px}.footer-help{display:none}}
+  </style>
+  <script type="importmap">{"imports":{"three":"./vendor/three/build/three.module.js","three/addons/":"./vendor/three/examples/jsm/"}}</script>
+</head>
+<body>
+  <div id="scene"></div>
+  <header><div><div class="brand">JARVIS</div><div class="eyebrow">NEURAL REACTOR / 01</div></div><div class="online"><span class="dot"></span>LOCAL 3D PREVIEW</div></header>
+  <aside class="info"><div class="eyebrow">REFERENCE REBUILD</div><h1>Ikki halqa. Bitta yadro.</h1><p>Rasmlar asosida qayta qurilgan, mustaqil aylanuvchi qismlardan iborat 3D model.</p><div class="rule"></div><div class="measure">GEOMETRY <b id="triangles">—</b></div><div class="measure">MOVING PARTS <b>3</b></div><div class="measure">MATERIALS <b>12</b></div><div class="measure">FORMAT <b>glTF 2.0</b></div><div class="rule"></div><div class="eyebrow">KO‘RINISH</div><div class="views"><button data-view="front">Old</button><button data-view="angle">Qiya</button><button data-view="side">Yon</button></div></aside>
+  <section class="panel"><div class="eyebrow">ANIMATSIYA HOLATI</div><div class="states"><button data-state="idle" class="active">Kutmoqda</button><button data-state="listening">Eshitmoqda</button><button data-state="thinking">Tahlil</button><button data-state="speaking">Gapirmoqda</button></div><div class="options"><button id="pause">Aylanishni to‘xtat</button><button id="wireframe">To‘r</button></div><p class="note">Holat animatsiyalari namoyishi. Mikrofon va haqiqiy ovoz hali ulanmagan.</p></section>
+  <footer><span class="footer-help">SICHQONCHA: AYLANTIRISH · G‘ILDIRAK: YAQINLASHTIRISH</span><span><a class="download" href="jarvis-core.glb" download>GLB ↓</a><a class="download" href="jarvis-core-animated.glb" download>ANIMATED GLB ↓</a></span></footer>
+  <div id="loader">MODEL YUKLANMOQDA</div>
+  <script type="module" src="./viewer.js"></script>
+</body>
+</html>

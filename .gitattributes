@@ -1,0 +1,3 @@
+assets/3d/vendor/** linguist-vendored -whitespace
+assets/3d/previews/*.json linguist-generated
+*.glb binary

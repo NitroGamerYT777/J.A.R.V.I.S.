@@ -1,0 +1,12 @@
+{
+  "animations": [],
+  "emissiveMaterials": 6,
+  "materials": 12,
+  "meshes": 21,
+  "triangles": 44544,
+  "animationClips": [
+    "Idle_24s"
+  ],
+  "browserErrors": [],
+  "independentMotionVerified": true
+}
