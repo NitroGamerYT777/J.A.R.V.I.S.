@@ -30,7 +30,9 @@ Asosiy grafik oyna quyidagi buyruq bilan ochiladi:
 python -m jarvis.ui.app
 ```
 
-Yoki editable o‘rnatishdan keyin `jarvis-ui` buyrug‘idan foydalaning. Oyna markazida holatiga qarab animatsiyalanadigan JARVIS yadrosi bor: kutish, AI so‘rovini tahlil qilish va javob tayyor bo‘lish holatlari real vaqt rejimida aks etadi. Pastdagi kiritish satri Gemini AI va lokal JARVIS funksiyalariga bevosita ulangan.
+Yoki editable o‘rnatishdan keyin `jarvis-ui` buyrug‘idan foydalaning. Oyna markazida haqiqiy GLB modelini chizadigan, OpenGL orqali ishlaydigan JARVIS 3D yadrosi bor. Halqalar va yadro kutish, AI so‘rovini tahlil qilish va javob berish holatlarida turlicha aylanadi va pulsatsiya qiladi. Sichqoncha bilan ushlab aylantiring, g'ildirak bilan yaqinlashtiring, ikki marta bosib boshlang'ich ko'rinishga qayting. Buning uchun alohida brauzer yoki preview server talab qilinmaydi. OpenGL mavjud bo'lmasa oddiy 2D yadro avtomatik ishlaydi. Pastdagi kiritish satri Gemini AI va lokal JARVIS funksiyalariga bevosita ulangan.
+
+Yangi 3D versiyaga o'tishda `python -m pip install -e ".[dev]"` buyrug'i bilan bog'liqliklarni yangilang. NumPy, Pillow, PyOpenGL va pyopengltk asosiy o'rnatishga kiritilgan. Model oddiy wheel paketiga ham qo'shiladi. Hozir pulsatsiya ilova holatiga bog'langan; haqiqiy mikrofon va audio amplitudasi hali ulanmagan.
 
 Yangilangan loyiha bilan `yt-dlp`, `selenium`, `PyAutoGUI` va `pyperclip` ham o'rnatiladi: `python -m pip install -e ".[dev]"`. Music Agent YouTube qidiruvidan aniq video ID oladi va oddiy `youtube.com/watch` sahifasini JARVISga tegishli minimallashtirilgan Chrome profilida ochadi. U video vaqtining yurayotganini tekshiradi; bu eski `/embed` playeridagi `Error 153` xatosini chetlab o'tadi. `Musiqani to'xtat` ijroni pauzaga qo'yadi, `davom ettir` o'sha videoni davom ettiradi, `musiqani o'chir` esa JARVISning fon Chrome oynasini yopadi. JARVIS yopilganda uning musiqa playeri ham yopiladi.
 
@@ -111,7 +113,7 @@ Browser Agent o'zining alohida Chrome profilini ishlatadi. Selenium Manager biri
 
 ## Yo‘l xaritasi
 
-Rasmlar asosida qayta qurilgan **JARVIS 3D modeli** va aylantiriladigan lokal preview `assets/3d/` ichida tayyor. Ko'rish uchun `python scripts/preview_jarvis_core.py` ni ishga tushirib, `http://127.0.0.1:8766` manzilini oching. Statik va animatsiyali GLB fayllari, teksturalar hamda qayta yaratish yo'riqnomasi [3D model hujjati](assets/3d/README.md)da. Model hali asosiy Tkinter oynasiga ulanmagan.
+Rasmlar asosida qayta qurilgan **JARVIS 3D modeli** asosiy Tkinter oynasiga ulangan. Alohida brauzer preview'i ham `assets/3d/` ichida mavjud: `python scripts/preview_jarvis_core.py` ni ishga tushirib, `http://127.0.0.1:8766` manzilini oching. Statik va animatsiyali GLB fayllari, teksturalar hamda qayta yaratish yo'riqnomasi [3D model hujjati](assets/3d/README.md)da.
 
 1. Matnli buyruqlar va lokal xotira — tayyor.
 2. Ovozli kirish/chiqish (STT/TTS).

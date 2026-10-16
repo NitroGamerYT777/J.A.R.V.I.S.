@@ -24,7 +24,8 @@ from jarvis.tasks import COMPLETED, FAILED, REJECTED, RUNNING, Task, TaskPlanner
 from jarvis.voice import speak
 from jarvis.ui import theme
 from jarvis.ui.monitor import system_metrics
-from jarvis.ui.widgets import AgentPanel, GlowButton, Panel, Reactor, TaskPanel
+from jarvis.ui.widgets import AgentPanel, GlowButton, Panel, TaskPanel
+from jarvis.ui.reactor3d import Reactor3D
 
 
 class AIProviderConnectionDialog(tk.Toplevel):
@@ -113,6 +114,7 @@ class JarvisApp(tk.Tk):
 
     def _build(self) -> None:
         self._build_header()
+        self._build_command_bar()
         content = tk.Frame(self, bg=theme.BACKGROUND)
         content.pack(fill="both", expand=True, padx=15, pady=(0, 12))
         content.grid_columnconfigure(0, weight=0, minsize=175)
@@ -125,7 +127,6 @@ class JarvisApp(tk.Tk):
         self._build_centre(content)
         self._build_right(content)
         self._build_bottom(content)
-        self._build_command_bar()
 
     def _build_header(self) -> None:
         header = tk.Frame(self, bg=theme.BACKGROUND, height=62)
@@ -164,7 +165,7 @@ class JarvisApp(tk.Tk):
     def _build_centre(self, parent: tk.Misc) -> None:
         core = Panel(parent, "AI Core Overview")
         core.grid(row=0, column=1, sticky="nsew", padx=(0, 10), pady=(0, 10))
-        self.reactor = Reactor(core.body)
+        self.reactor = Reactor3D(core.body)
         self.reactor.pack(fill="both", expand=True)
 
     def _build_right(self, parent: tk.Misc) -> None:
@@ -222,7 +223,7 @@ class JarvisApp(tk.Tk):
 
     def _build_command_bar(self) -> None:
         bar = tk.Frame(self, bg=theme.PANEL, highlightbackground=theme.BORDER, highlightthickness=1)
-        bar.pack(fill="x", padx=15, pady=(0, 14), ipady=7)
+        bar.pack(side="bottom", fill="x", padx=15, pady=(0, 14), ipady=7)
         tk.Label(bar, text="›_", bg=theme.PANEL, fg=theme.CYAN, font=(theme.MONO, 18, "bold")).pack(side="left", padx=(14, 7))
         self.prompt = tk.Entry(bar, bg=theme.PANEL, fg=theme.TEXT, insertbackground=theme.CYAN, relief="flat", font=(theme.FONT, 11))
         self.prompt.pack(side="left", fill="x", expand=True, ipady=8)
@@ -469,7 +470,7 @@ class JarvisApp(tk.Tk):
                     self._add_feed("JARVIS: " + str(message), theme.GREEN)
                     if self.voice_enabled:
                         speak(str(message))
-                    self.after(3300, lambda: self.reactor.set_state("idle", "TIZIM TAYYOR"))
+                    self._idle_later(3300)
                 elif kind == "agent_note":
                     self._add_feed(str(message), theme.CYAN)
                 elif kind == "intent":
@@ -503,9 +504,10 @@ class JarvisApp(tk.Tk):
                             self.reactor.set_state("speaking", "BUYRUQ ANIQLASHTIRILMOQDA")
                     else:
                         self.reactor.set_state("speaking", "JAVOB TAYYOR")
-                        self.after(3300, lambda: self.reactor.set_state("idle", "TIZIM TAYYOR"))
+                        self._idle_later(3300)
                 elif kind == "provider_error":
                     self.agent_panel.set_working("core", False)
+                    self.reactor.set_state("idle", "AI JAVOBIDA XATO")
                     error = str(message)
                     self._add_feed("AI API: " + error, theme.RED)
                     if self.active_connection:
@@ -529,7 +531,7 @@ class JarvisApp(tk.Tk):
                     self._refresh_tasks()
                     self._add_feed(f"TASK #{updated.id} {status.lower()}: {result}", theme.GREEN if status == COMPLETED else theme.RED)
                     self.reactor.set_state("speaking", "AMAL YAKUNLANDI")
-                    self.after(2500, lambda: self.reactor.set_state("idle", "TIZIM TAYYOR"))
+                    self._idle_later(2500)
         except queue.Empty:
             pass
         self.after(80, self._read_events)
@@ -541,6 +543,13 @@ class JarvisApp(tk.Tk):
         self.feed.tag_configure(color, foreground=color)
         self.feed.see("end")
         self.feed.configure(state="disabled")
+
+    def _idle_later(self, delay: int) -> None:
+        revision = self.reactor.revision
+        def restore() -> None:
+            if self.reactor.revision == revision:
+                self.reactor.set_state("idle", "TIZIM TAYYOR")
+        self.after(delay, restore)
 
     def _refresh_tasks(self) -> None:
         self.task_panel.refresh(self.tasks.recent())

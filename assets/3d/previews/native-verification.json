@@ -1,0 +1,18 @@
+{
+  "states": [
+    "idle",
+    "thinking",
+    "speaking",
+    "listening"
+  ],
+  "renderer": "Intel(R) UHD Graphics / OpenGL 4.6.0 - Build 32.0.101.7088",
+  "frameCount": 58,
+  "meshPrimitives": 21,
+  "size": [
+    850,
+    650
+  ],
+  "errors": [],
+  "inputVisibleAtMinimumSize": true,
+  "fallbackVerified": true
+}

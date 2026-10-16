@@ -21,7 +21,9 @@ python scripts/preview_jarvis_core.py
 
 Brauzerda `http://127.0.0.1:8766` manzilini oching; server tashqi tarmoqqa ochilmaydi. Modelni sichqoncha bilan aylantirish, yaqinlashtirish, to'r ko'rinishini tekshirish va holat animatsiyalarini almashtirish mumkin. `index.html` faylini bevosita ikki marta bosish o'rniga shu serverdan foydalaning.
 
-Ko'rish oynasidagi eshitish va gapirish holatlari hozircha animatsiya namoyishi. Mikrofon yoki ovozli AI ulanishi yo'q. Model JARVISning mavjud Tkinter oynasiga hali ulanmagan.
+Model JARVISning asosiy Tkinter oynasiga ham ulangan: `python -m jarvis.ui.app`. Native OpenGL renderer modeli bevosita markaziy panelda chizadi, halqalar va yadro ilovaning `idle`, `thinking`, `speaking` holatlariga javob beradi. Eshitish (`listening`) animatsiyasi ham tayyor, ammo mikrofon kiritishi hali ulanmagan. Pulsatsiya hozir audio amplitudasiga emas, ilova holatiga bog'langan. Oyna ichida ushlab aylantirish, zoom va ikki marta bosib ko'rinishni qaytarish mavjud. Grafik drayver yoki bog'liqlik ishlamasa 2D zaxira yadro ishlatiladi.
+
+Native renderer suratlari `previews/native-*.png` ichida. Ularni qayta tekshirish uchun `python scripts/check_native_core.py` ishlatiladi: u JARVIS oynasini ochib holatlar, resize, eng kichik oynada yozish satri va 2D zaxira holatini tekshiradi. Faqat 3D panelning o'z framebufferini suratga oladi.
 
 GLB fayllarda ko'k qismlar emissive materialga ega. Ko'rish oynasi qo'shimcha bloom, yoritish va akslanish beradi; boshqa 3D dasturda shu effektlar boshqacha ko'rinishi mumkin. Ikki GLB ham haqiqiy, barcha tomonlardan ko'riladigan geometriyaga ega.
 
