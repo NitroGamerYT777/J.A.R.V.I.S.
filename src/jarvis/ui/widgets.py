@@ -156,31 +156,46 @@ class TaskPanel(Panel):
         COMPLETED: theme.GREEN, REJECTED: theme.MUTED, FAILED: theme.RED,
     }
 
-    def __init__(self, parent: tk.Misc, approve: Callable[[int], None], reject: Callable[[int], None]) -> None:
+    def __init__(self, parent: tk.Misc, approve: Callable[[int], None], reject: Callable[[int], None], clear_completed: Callable[[], None] | None = None) -> None:
         super().__init__(parent, "Tasks / approval queue", accent=theme.AMBER)
         self.approve, self.reject = approve, reject
         self.tasks: list[Task] = []
-        self.listbox = tk.Listbox(self.body, bg=theme.PANEL, fg=theme.TEXT, selectbackground=theme.BLUE, selectforeground="white", relief="flat", highlightthickness=0, font=(theme.FONT, 8), activestyle="none")
-        self.listbox.pack(fill="both", expand=True)
-        self.status = tk.Label(self.body, text="Tasdiqlanishi kerak bo'lgan amal yo'q.", bg=theme.PANEL, fg=theme.MUTED, wraplength=225, justify="left", font=(theme.FONT, 8))
+        # Reserve the action toolbar first so a short window only shrinks the list.
+        controls = tk.Frame(self.body, bg=theme.PANEL)
+        controls.pack(side="bottom", fill="x")
+        rows = tk.Frame(self.body, bg=theme.PANEL)
+        rows.pack(fill="both", expand=True)
+        self.listbox = tk.Listbox(rows, height=4, bg=theme.PANEL, fg=theme.TEXT, selectbackground=theme.BLUE, selectforeground="white", relief="flat", highlightthickness=0, font=(theme.FONT, 8), activestyle="none", exportselection=False)
+        scrollbar = tk.Scrollbar(rows, command=self.listbox.yview)
+        self.listbox.configure(yscrollcommand=scrollbar.set)
+        scrollbar.pack(side="right", fill="y")
+        self.listbox.pack(side="left", fill="both", expand=True)
+        self.status = tk.Label(controls, text="Tasdiqlanishi kerak bo'lgan amal yo'q.", bg=theme.PANEL, fg=theme.MUTED, height=3, anchor="nw", wraplength=225, justify="left", font=(theme.FONT, 8))
         self.status.pack(fill="x", pady=(7, 3))
-        buttons = tk.Frame(self.body, bg=theme.PANEL)
+        buttons = tk.Frame(controls, bg=theme.PANEL)
         buttons.pack(fill="x")
-        GlowButton(buttons, "TASDIQLASH", self._approve_selected, font=(theme.FONT, 8, "bold")).pack(side="left", fill="x", expand=True, padx=(0, 3))
-        GlowButton(buttons, "RAD ETISH", self._reject_selected, font=(theme.FONT, 8, "bold")).pack(side="left", fill="x", expand=True, padx=(3, 0))
-        GlowButton(self.body, "BATAFSIL KO'RISH", self._show_details, font=(theme.FONT, 8)).pack(fill="x", pady=(5, 0))
+        self.approve_button = GlowButton(buttons, "TASDIQLASH", self._approve_selected, font=(theme.FONT, 8, "bold"))
+        self.approve_button.pack(side="left", fill="x", expand=True, padx=(0, 3))
+        self.reject_button = GlowButton(buttons, "RAD ETISH", self._reject_selected, font=(theme.FONT, 8, "bold"))
+        self.reject_button.pack(side="left", fill="x", expand=True, padx=(3, 0))
+        GlowButton(controls, "BATAFSIL KO'RISH", self._show_details, font=(theme.FONT, 8)).pack(fill="x", pady=(5, 0))
+        if clear_completed:
+            self.clear_button = GlowButton(controls, "BAJARILGANLARNI TOZALASH", clear_completed, font=(theme.FONT, 8))
+            self.clear_button.pack(fill="x", pady=(5, 0))
         self.listbox.bind("<<ListboxSelect>>", self._show_selected)
+        self._show_selected()
 
     def refresh(self, tasks: list[Task]) -> None:
+        selected_task = self._selected_task()
+        selected_id = selected_task.id if selected_task else None
         self.tasks = tasks
-        selected = self.listbox.curselection()
         self.listbox.delete(0, "end")
-        for task in tasks:
+        for index, task in enumerate(tasks):
             self.listbox.insert("end", f"[{task.status}] {task.title}")
-        if selected and selected[0] < len(tasks):
-            self.listbox.selection_set(selected[0])
-        elif tasks:
-            self.listbox.selection_set(0)
+            self.listbox.itemconfigure(index, fg=self.STATUS_COLORS.get(task.status, theme.TEXT))
+        if tasks:
+            index = next((i for i, task in enumerate(tasks) if task.id == selected_id), 0)
+            self.listbox.selection_set(index)
         self._show_selected()
 
     def _selected_task(self) -> Task | None:
@@ -189,14 +204,16 @@ class TaskPanel(Panel):
 
     def _show_selected(self, _event: tk.Event[tk.Misc] | None = None) -> None:
         task = self._selected_task()
+        can_approve = bool(task and task.status == PENDING_APPROVAL)
+        self.approve_button.configure(state="normal" if can_approve else "disabled")
+        self.reject_button.configure(state="normal" if can_approve else "disabled")
         if not task:
             self.status.configure(text="Tasdiqlanishi kerak bo'lgan amal yo'q.", fg=theme.MUTED)
             return
-        detail = task.result or ("Bu amal bajarilishidan oldin ruxsatingiz kerak." if task.requires_approval else "Vazifa rejalashtirilgan.")
-        if len(detail) > 180:
-            detail = detail[:180] + "…"
-        preview = task.payload[:180] + ("…" if len(task.payload) > 180 else "")
-        self.status.configure(text=f"{task.status} • {task.action}\n{preview}\n{detail}", fg=self.STATUS_COLORS.get(task.status, theme.TEXT))
+        detail = task.result or ("Tasdiq sababi: " + task.approval_reason if task.requires_approval else "Oddiy amal: avtomatik bajariladi.")
+        if len(detail) > 105:
+            detail = detail[:105] + "…"
+        self.status.configure(text=f"{task.status} • {task.action}\n{detail}", fg=self.STATUS_COLORS.get(task.status, theme.TEXT))
 
     def _approve_selected(self) -> None:
         task = self._selected_task()
@@ -213,6 +230,6 @@ class TaskPanel(Panel):
         if task:
             messagebox.showinfo(
                 f"Task #{task.id}",
-                f"Agent: {task.agent_key}\nAmal: {task.action}\nHolat: {task.status}\n\nQiymat:\n{task.payload}\n\nNatija:\n{task.result or 'Hali bajarilmadi.'}",
+                f"Agent: {task.agent_key}\nAmal: {task.action}\nHolat: {task.status}\nTasdiq: {task.approval_reason if task.requires_approval else 'Talab qilinmaydi'}\n\nQiymat:\n{task.payload}\n\nNatija:\n{task.result or 'Hali bajarilmadi.'}",
                 parent=self,
             )

@@ -29,13 +29,15 @@ class AIProvider(Protocol):
 SYSTEM_INSTRUCTION = """Sen JARVISsan — foydalanuvchiga o'zbek tilida yordam beradigan,
 aniq va samimiy shaxsiy AI-assistent. Qisqa, foydali javob ber. O'zing tashqi
 amallarni bajara olaman deb da'vo qilma; xat yuborish, fayl o'chirish, xarid yoki
-qurilma boshqaruvi kabi ishlar tasdiqlanishi va alohida vosita talab qilishini ayt."""
+qurilmaning xavfli sozlamalarini o'zgartirish kabi ishlar tasdiqlanishi va alohida vosita talab qilishini ayt."""
 
 ROUTER_INSTRUCTION = """Sen JARVIS buyruq tahlilchisisan. Faqat valid JSON qaytar.
 Savol yoki suhbat: {"type":"answer","category":"question","reply":"o'zbekcha javob"}.
 Kompyuter amali: {"type":"command","category":"browser|computer|media|voice","command":"amal","target":"qiymat yoki JSON obyekt","reply":"qisqa tasdiq"}.
-Aniq bajarish so'rovi bo'lmasa kompyuter buyrug'ini yaratma. Har bir amal foydalanuvchi
-tasdiqlagandan keyin bajariladi. Shell/Python kodini command sifatida qaytarma.
+Aniq bajarish so'rovi bo'lmasa kompyuter buyrug'ini yaratma. Oddiy amallar avtomatik
+bajariladi; yuborish, o'chirish, xarid, xavfli yoki ta'siri noma'lum amallar uchun dastur
+tasdiq so'raydi. Tasdiq kerakligini o'zing belgilama va amal bajarildi deb oldindan aytma.
+Shell/Python kodini command sifatida qaytarma.
 
 Brauzer (Selenium) amallari:
 - browser_open: target URL yoki {"url":"https://example.com"}

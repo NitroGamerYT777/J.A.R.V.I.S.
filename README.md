@@ -68,7 +68,7 @@ Model maydonini qo'lda istalgan hisobingizda mavjud model nomiga almashtirish mu
 
 Yon menyudagi **Agents** bo'limi API ulanishlarini qo'shish va agentlar holatini alohida boshqaradi. Bir provayderga bir nechta API kalit qo'shish mumkin; ular lokal `data/connections.json` faylida saqlanadi. Yangi Gemini kaliti qo'shilganda u default Chat AI bo'ladi.
 
-**Assignments** bo'limi esa har bir agentni (Browser, File, Automation va boshqalar) kerakli AI ulanishiga biriktiradi. Gemini foydalanuvchi xabarini avval `browser`, `computer`, `question` yoki `other` turiga ajratadi. Browser/computer taski mos agentga biriktiriladi va u Tasks panelidagi tasdiqdan keyin bajariladi.
+**Assignments** bo'limi esa har bir agentni (Browser, File, Automation va boshqalar) kerakli AI ulanishiga biriktiradi. Gemini foydalanuvchi xabarini avval `browser`, `computer`, `question` yoki `other` turiga ajratadi. Browser/computer taski mos agentga biriktiriladi; dastur amal xavfini tekshirib, oddiy ishni avtomatik bajaradi yoki Tasks panelida tasdiq kutadi.
 
 API 401 yoki 403 xatosi qaytarsa, JARVIS uni yaroqsiz yoki muddati tugagan deb belgilaydi va lokal kalit ro'yxatidan o'chirishga ruxsat so'raydi.
 
@@ -76,7 +76,11 @@ API 401 yoki 403 xatosi qaytarsa, JARVIS uni yaroqsiz yoki muddati tugagan deb b
 
 JARVIS ichida AI Core, Memory va System Agent doim ulangan. Browser, File va Automation agentlari esa bajariladigan vazifaga qarab ishga tushadi; oynada ularning ulangan, ulanmagan yoki ishlayotgan holati ko'rinadi.
 
-Brauzer, kompyuter va yangi musiqa ijrosi amallari **Tasks / approval queue** ga yozilib, **Tasdiqlash** tugmasidan keyin bajariladi. JARVISning o'z playeridagi pauza/davom ettirish, keyingi/oldingi trek va ovoz boshqaruvi esa darhol bajariladi; ularning natijasi ham Tasks tarixida saqlanadi. Rad etilgan, bajarilgan va xato tugagan vazifalar ham tarixda qoladi.
+Barcha amallar **Tasks / approval queue** tarixiga yoziladi, lekin har biriga tasdiq so'ralmaydi. Sayt ochish, qidirish, musiqa ijrosi/boshqaruvi, sahifani o'qish, mavzuni almashtirish, scroll, skrinshot, oyna almashtirish, oddiy bir qatorli matn yozish hamda ro'yxatdagi Notepad/Calculator/Explorer/Settings ilovalarini argumentsiz ochish avtomatik bajariladi.
+
+Yuborish, o'chirish, xarid/to'lov, parol maydonlari, noma'lum dastur/terminal, saqlash yoki yuborishga olib kelishi mumkin bo'lgan klavishlar tasdiq kutadi. Koordinata, drag yoki ta'siri noma'lum CSS/tugmani xavfsiz deb taxmin qilmaydi — ular ham tekshirish uchun qoladi. Bu qoidalar AI aytgan "xavfsiz" belgisiga emas, lokal amal va parametrlariga tayanadi; ular butun kompyuter uchun to'liq xavfsizlik kafolati emas. Workflow'dagi barcha qadamlar oldindan tekshiriladi: bittasi muhim bo'lsa, hech biri tasdiqsiz boshlanmaydi. Tasdiq sababi panelda va **BATAFSIL KO'RISH** oynasida ko'rinadi.
+
+Tasdiq kutayotgan va bajarilayotgan tasklar ro'yxat boshida turadi. **BAJARILGANLARNI TOZALASH** barcha muvaffaqiyatli tugagan task yozuvlarini (faqat ko'rinayotgan 30 tasini emas) lokal bazadan o'chiradi; bu tarix yozuvlarini ilova orqali qaytarib bo'lmaydi. Kutilayotgan, bajarilayotgan, rad etilgan va xato tugagan tasklar saqlanadi; kompyuterdagi fayllar o'chirilmaydi. Ilova qayta ochilganda eski tasdiq kutayotgan tasklar o'z-o'zidan bajarilmaydi.
 
 Quyidagi buyruqlarni sinab ko'ring:
 
@@ -119,9 +123,9 @@ Rasmlar asosida qayta qurilgan **JARVIS 3D modeli** asosiy Tkinter oynasiga ulan
 2. Ovozli kirish/chiqish (STT/TTS) — Azure Speech bilan ulangan.
 3. Kalendar, fayllar, brauzer, aqlli uy va bildirishnomalar uchun alohida modullar.
 4. LLM orqali tabiiy suhbat va rejalashtirish — Gemini bilan tayyor.
-5. Har bir tashqi yoki xavfli amal uchun ruxsat, jurnal va cheklovlar.
+5. Muhim yoki ta'siri noma'lum amallar uchun ruxsat; barcha amallar uchun jurnal.
 
-JARVIS foydalanuvchi nomidan o‘chirishi, yuborishi, sotib olishi yoki qurilmani boshqarishi mumkin bo‘lgan har qanday amalni bajarishdan oldin aniq tasdiq so‘rashi kerak.
+JARVIS o'chirish, yuborish, xarid va boshqa xavfli yoki ta'siri noma'lum amallarni bajarishdan oldin aniq tasdiq so'raydi; oddiy kompyuter ishlari avtomatik bajariladi.
 
 ## Azure orqali ovozli suhbat
 

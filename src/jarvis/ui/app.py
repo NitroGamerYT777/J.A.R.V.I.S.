@@ -20,7 +20,7 @@ from jarvis.connections import ConnectionStore, build_ai
 from jarvis.intent import AIIntent
 from jarvis.llm import AIError
 from jarvis.memory import Memory
-from jarvis.tasks import COMPLETED, FAILED, REJECTED, RUNNING, Task, TaskPlanner, TaskStore, execute
+from jarvis.tasks import COMPLETED, FAILED, PENDING_APPROVAL, PLANNED, REJECTED, RUNNING, Task, TaskPlanner, TaskStore, execute
 from jarvis.voice import get_voice
 from jarvis.ui.voice_dialog import VoiceDialog
 from jarvis.ui import theme
@@ -190,7 +190,7 @@ class JarvisApp(tk.Tk):
         self._add_feed("JARVIS tizimi ishga tushdi.", theme.GREEN)
         self._add_feed("AI modeli: " + ("Gemini ulangan" if self.ai else "lokal rejim"), theme.CYAN)
         self._add_feed("Buyruq kutilyapti...", theme.MUTED)
-        self.task_panel = TaskPanel(right, self._approve_task, self._reject_task)
+        self.task_panel = TaskPanel(right, self._approve_task, self._reject_task, self._clear_completed_tasks)
         self.task_panel.grid(row=1, column=0, sticky="nsew")
         self._refresh_tasks()
 
@@ -260,6 +260,8 @@ class JarvisApp(tk.Tk):
             self._refresh_tasks()
             self._add_feed(f"TASK #{planned.id}: {planned.title}", theme.AMBER)
             self.reactor.set_state("idle", "TASK RUXSATINI KUTMOQDA" if planned.requires_approval else "VAZIFA REJALASHTIRILDI")
+            if not planned.requires_approval and planned.action != "manual":
+                self._approve_task(planned.id)
             self.voice.resume_listening()
             return
         self.reactor.set_state("thinking", "SO'ROV TAHLIL QILINMOQDA")
@@ -507,6 +509,8 @@ class JarvisApp(tk.Tk):
         self._add_feed(f"{provider.title()} API kaliti qo'shildi: {model}", theme.GREEN)
 
     def _approve_task(self, task_id: int) -> None:
+        if self.tasks.get(task_id).status not in {PENDING_APPROVAL, PLANNED}:
+            return
         task = self.tasks.update(task_id, RUNNING)
         self._refresh_tasks()
         self.agent_panel.set_working(task.agent_key, True)
@@ -527,9 +531,16 @@ class JarvisApp(tk.Tk):
             self.events.put(("task_done", (task, FAILED, str(error))))
 
     def _reject_task(self, task_id: int) -> None:
+        if self.tasks.get(task_id).status != PENDING_APPROVAL:
+            return
         task = self.tasks.update(task_id, REJECTED, "Foydalanuvchi ruxsat bermadi.")
         self._refresh_tasks()
         self._add_feed(f"TASK #{task.id} rad etildi: {task.title}", theme.MUTED)
+
+    def _clear_completed_tasks(self) -> None:
+        count = self.tasks.clear_completed()
+        self._refresh_tasks()
+        self._add_feed(f"{count} ta bajarilgan task yozuvi tozalandi. Fayllar o'zgartirilmadi.", theme.MUTED)
 
     def _read_events(self) -> None:
         try:

@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from urllib.parse import urlparse
 from urllib.parse import quote_plus
+from jarvis.task_policy import approval_reason
 
 PENDING_APPROVAL = "Tasdiq kutilmoqda"
 PLANNED = "Rejalashtirilgan"
@@ -28,6 +29,10 @@ class Task:
     created_at: str
     result: str = ""
 
+    @property
+    def approval_reason(self) -> str:
+        return approval_reason(self.action, self.payload) or ("Bu amal uchun tasdiq belgilangan." if self.requires_approval else "")
+
 
 class TaskStore:
     """Persistent audit trail for every proposed and executed computer action."""
@@ -45,7 +50,8 @@ class TaskStore:
         )
         self.connection.commit()
 
-    def create(self, title: str, agent_key: str, action: str, payload: str = "", *, requires_approval: bool = True) -> Task:
+    def create(self, title: str, agent_key: str, action: str, payload: str = "", *, requires_approval: bool | None = None) -> Task:
+        requires_approval = bool(requires_approval or approval_reason(action, payload))
         status = PENDING_APPROVAL if requires_approval else PLANNED
         cursor = self.connection.execute(
             "INSERT INTO tasks (title, agent_key, action, payload, status, requires_approval) VALUES (?, ?, ?, ?, ?, ?)",
@@ -64,7 +70,7 @@ class TaskStore:
 
     def recent(self, limit: int = 30) -> list[Task]:
         rows = self.connection.execute(
-            "SELECT id, title, agent_key, action, payload, status, requires_approval, created_at, result FROM tasks ORDER BY id DESC LIMIT ?", (limit,)
+            "SELECT id, title, agent_key, action, payload, status, requires_approval, created_at, result FROM tasks ORDER BY CASE status WHEN ? THEN 0 WHEN ? THEN 1 WHEN ? THEN 2 ELSE 3 END, id DESC LIMIT ?", (PENDING_APPROVAL, RUNNING, PLANNED, limit)
         ).fetchall()
         return [Task(*row[:6], bool(row[6]), *row[7:]) for row in rows]
 
@@ -75,6 +81,12 @@ class TaskStore:
 
     def close(self) -> None:
         self.connection.close()
+
+    def clear_completed(self) -> int:
+        """Delete only successful task records, never pending/running work or files."""
+        cursor = self.connection.execute("DELETE FROM tasks WHERE status = ?", (COMPLETED,))
+        self.connection.commit()
+        return cursor.rowcount
 
 
 class TaskPlanner:
@@ -128,7 +140,7 @@ class TaskPlanner:
 
 
 def execute(task: Task) -> str:
-    """A small, auditable allow-list executed only after user approval."""
+    """Execute an allow-listed task after the UI's risk/approval gate."""
     if task.action == "open_url":
         webbrowser.open(task.payload, new=2)
         return "Brauzerga ochish so'rovi yuborildi."
