@@ -163,6 +163,14 @@ Musiqa ovozini ko'tar / pasaytir
 
 Browser Agent o'zining alohida Chrome profilini ishlatadi. Selenium Manager birinchi ishga tushishda mos ChromeDriver'ni yuklab olishi mumkin. Desktop Agent ekranning faol oynasiga ta'sir qiladi; PyAutoGUI favqulodda to'xtatish uchun sichqonchani ekranning yuqori chap burchagiga olib borish imkonini saqlaydi.
 
+## Computer Hub: 50 lokal qobiliyat
+
+Yon menyudagi **Computer Hub** orqali fayl qidirish/tahrirlash/ko‘chirish, zaxiradan tiklash, ZIP, dublikatlar, o‘rnatilgan ilovalar, Microsoft Store qidiruvi, MRT oynasi va tizim holati bilan ishlash mumkin. Muhim o‘zgarishlar Tasks tasdig‘ini kutadi; qidiruv va ko‘rsatish avtomatik. Fayl/ilova noaniq bo‘lsa dastur taxmin qilmaydi. Lokal indeks keshi, fon worker’lari va UI effektlari optimallashtirildi; mavjud Office Studio, ovoz, musiqa va 3D saqlangan.
+
+Boshlash: `faylni top: hisobot`, `hisobot.txt nomli faylni top`, `Chrome ilovasini och`, `mrt bilan virusni tekshir`. MRT’ni foydalanuvchi boshqaradi; task tugashi virus skani tugaganini anglatmaydi. Store hech narsani avtomatik o‘rnatmaydi.
+
+[Barcha 50 qobiliyat, foydalanish va xavfsizlik chegaralari](docs/computer-capabilities.md).
+
 ## Yo‘l xaritasi
 
 Rasmlar asosida qayta qurilgan **JARVIS 3D modeli** asosiy Tkinter oynasiga ulangan. Alohida brauzer preview'i ham `assets/3d/` ichida mavjud: `python scripts/preview_jarvis_core.py` ni ishga tushirib, `http://127.0.0.1:8766` manzilini oching. Statik va animatsiyali GLB fayllari, teksturalar hamda qayta yaratish yo'riqnomasi [3D model hujjati](assets/3d/README.md)da.

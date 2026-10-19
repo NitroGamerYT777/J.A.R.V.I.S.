@@ -5,12 +5,18 @@ import math
 import sys
 import time
 import tkinter as tk
+from functools import lru_cache
 
 from jarvis.ui import theme
 
 
 def blend(start: str, end: str, amount: float) -> str:
-    amount = max(0., min(1., amount))
+    return _blend_cached(start, end, round(max(0., min(1., amount))*1024))
+
+
+@lru_cache(maxsize=8192)
+def _blend_cached(start, end, step):
+    amount = step/1024
     channels = [round(int(start[i:i+2], 16) * (1-amount) + int(end[i:i+2], 16) * amount)
                 for i in (1, 3, 5)]
     return "#" + "".join(f"{channel:02x}" for channel in channels)
@@ -45,7 +51,7 @@ class MotionClock:
 
     def _schedule(self):
         if not self.closed:
-            self.job = self.root.after(33 if self.enabled else 150, self._tick)
+            self.job = self.root.after(33 if self.enabled and self.root.winfo_viewable() else 150, self._tick)
 
     def _tick(self):
         self.job = None
@@ -97,6 +103,9 @@ class HoverEffect:
         self.hovered = self.focused = self.pressed = False
         self.amount = 0.
         self.last_style = None
+        options = widget.keys()
+        self.has_state = 'state' in options
+        self.has_foreground = 'foreground' in options
         self.clock = motion_clock(widget)
         self.clock.subscribe(widget, self._frame)
         for event, name, value in (("<Enter>", "hovered", True), ("<Leave>", "hovered", False),
@@ -112,7 +121,7 @@ class HoverEffect:
 
     def _frame(self, elapsed, delta, enabled):
         widget = self.widget
-        disabled = str(widget.cget("state")) == "disabled" if "state" in widget.keys() else False
+        disabled = str(widget.cget("state")) == "disabled" if self.has_state else False
         target = 0. if disabled else (1. if self.hovered or self.focused else 0.)
         self.amount = approach(self.amount, target, delta) if enabled else target
         amount = self.amount
@@ -124,7 +133,7 @@ class HoverEffect:
                  1 if self.pressed and not disabled else 0)
         if style != self.last_style:
             options = dict(bg=style[0], highlightbackground=style[2], highlightcolor=self.accent)
-            if "foreground" in widget.keys():
+            if self.has_foreground:
                 options["fg"] = style[1]
             widget.configure(**options)
             if isinstance(widget, tk.Button):
@@ -138,7 +147,7 @@ class ScanStrip(tk.Canvas):
         super().__init__(parent, width=1, height=height, bg=theme.PANEL, highlightthickness=0,
                          takefocus=False, **kwargs)
         self.accent = accent
-        self.lines = [self.create_line(0, 1, 1, 1, fill=theme.BORDER) for _ in range(15)]
+        self.lines = [self.create_line(0, 1, 1, 1, fill=blend(theme.BORDER, accent, (1-abs(index-7)/8)*.8), width=max(1, height-1)) for index in range(15)]
         self.bind("<Configure>", lambda _: self._frame(0., 0., False))
         motion_clock(self).subscribe(self, self._frame)
 
@@ -149,7 +158,6 @@ class ScanStrip(tk.Canvas):
         for index, line in enumerate(self.lines):
             x = center+(index-7)*radius/7
             self.coords(line, max(0, x-radius/14), height/2, min(width, max(0, x+radius/14)), height/2)
-            self.itemconfigure(line, fill=blend(theme.BORDER, self.accent, (1-abs(index-7)/8)*.8), width=max(1, height-1))
 
 
 class ActivityWave(tk.Canvas):
@@ -183,6 +191,7 @@ class MetricGauge(tk.Canvas):
                          highlightthickness=0, takefocus=False)
         self.target = self.value = 0.
         self.caption = "—"
+        self._last = None
         self.track = self.create_arc(0, 0, 0, 0, start=135, extent=-270,
                                      style="arc", outline=theme.BORDER, width=4)
         self.ring = self.create_arc(0, 0, 0, 0, start=135, extent=0,
@@ -201,6 +210,10 @@ class MetricGauge(tk.Canvas):
     def _frame(self, elapsed, delta, enabled):
         self.value = approach(self.value, self.target, delta, 5.) if enabled else self.target
         width, height = self.winfo_width(), self.winfo_height()
+        state = (width, height, round(self.value, 1), self.caption, round(elapsed*65, 1) if self.caption == 'ACTIVE' and enabled else 0)
+        if state == self._last:
+            return
+        self._last = state
         radius = min(width/2-9, height/2-8)
         box = (width/2-radius, height/2-radius, width/2+radius, height/2+radius)
         self.coords(self.track, *box)
@@ -211,3 +224,56 @@ class MetricGauge(tk.Canvas):
                            extent=-70 if active else -270*self.value/100,
                            outline=theme.AMBER if self.value >= 85 else theme.CYAN)
         self.itemconfigure(self.readout, text=self.caption)
+
+
+class NeuralRibbon(tk.Canvas):
+    """Bounded HUD: two flowing strands, traveling packets, stars and pointer parallax.
+
+    Decorative only, not fabricated microphone/network telemetry. Items are allocated once.
+    """
+    def __init__(self, parent, *, state=lambda: 'idle', height=38):
+        super().__init__(parent, width=1, height=height, bg=theme.PANEL, highlightthickness=0, takefocus=False)
+        self.state = state
+        self.pointer = 0.
+        self._accent = None
+        self.strands = [self.create_line(0, 0, 1, 1, fill=color, width=1, smooth=True) for color in ('#175570', '#123e53')]
+        self.links = [self.create_line(0, 0, 1, 1, fill='#103e52') for _ in range(18)]
+        self.halos = [self.create_oval(0, 0, 1, 1, outline='#164b60') for _ in range(10)]
+        self.packets = [self.create_oval(0, 0, 1, 1, outline='', fill=theme.CYAN) for _ in range(10)]
+        self.stars = [self.create_oval(0, 0, 1, 1, outline='', fill='#16465a') for _ in range(24)]
+        self.bind('<Motion>', lambda event: setattr(self, 'pointer', event.x/max(1, self.winfo_width())-.5))
+        self.bind('<Leave>', lambda _: setattr(self, 'pointer', 0.))
+        motion_clock(self).subscribe(self, self._frame)
+
+    def _frame(self, elapsed, delta, enabled):
+        width, height = self.winfo_width(), self.winfo_height()
+        t = elapsed  # The shared clock already freezes elapsed in reduced-motion mode.
+        mode = self.state()
+        accent = {'thinking': theme.AMBER, 'speaking': theme.GREEN}.get(mode, theme.CYAN)
+        if accent != self._accent:
+            for packet in self.packets:
+                self.itemconfigure(packet, fill=accent)
+            self._accent = accent
+        speed = 1.8 if mode != 'idle' else .7
+        def y(x, strand=0):
+            return height/2+math.sin(x/max(width, 1)*math.pi*4-t*speed+strand*math.pi)*(height*.26)+self.pointer*3
+        for index, line in enumerate(self.strands):
+            points = []
+            for segment in range(61):
+                x = segment*width/60
+                points.extend((x, y(x, index)))
+            self.coords(line, *points)
+        for index, link in enumerate(self.links):
+            x = ((index/18+t*.025) % 1)*width
+            self.coords(link, x, y(x), x, y(x, 1))
+        for index, (packet, halo) in enumerate(zip(self.packets, self.halos)):
+            x = ((index/10+t*.055*speed) % 1)*width
+            cy = y(x, index % 2)
+            size = 1.5+(.5+.5*math.sin(t*3+index))
+            self.coords(packet, x-size, cy-size, x+size, cy+size)
+            self.coords(halo, x-size-3, cy-size-3, x+size+3, cy+size+3)
+        for index, star in enumerate(self.stars):
+            x = ((index*.6180339+t*.008) % 1)*width
+            cy = ((index*.381966) % 1)*height
+            self.coords(star, x, cy, x+1, cy+1)
+            self.itemconfigure(star, fill=blend('#0c2435', accent, .12+.3*abs(math.sin(t*.9+index))))

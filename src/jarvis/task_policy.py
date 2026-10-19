@@ -36,6 +36,13 @@ def approval_reason(action: str, payload: str = "", *, _depth: int = 0) -> str:
         return "Amal nomi noto'g'ri shaklda."
     data = _data(payload)
     value = lambda key: str(data.get(key, data.get("value", ""))).strip()
+    if action == 'computer_action':
+        from jarvis.computer.catalog import validate_action
+        try:
+            skill, args = validate_action(data)
+        except (ValueError, TypeError):
+            return 'Kompyuter amali parametrlari noto‘g‘ri; tekshirish kerak.'
+        return (skill.title + ': lokal fayl/clipboard yoki ilova holati o‘zgaradi. Tasks → BATAFSIL KO‘RISH orqali parametrlarni tekshiring.') if skill.approval else ''
     if action in {"office_create", "office_convert"}:
         from jarvis.office.service import validate_request
         try:

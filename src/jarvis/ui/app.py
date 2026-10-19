@@ -33,6 +33,10 @@ from jarvis.office.service import OfficeService, validate_request
 from jarvis.office.commands import local_conversion_intent
 from jarvis.office.destinations import wants_desktop
 from jarvis.ui.office_studio import OfficeStudio
+from jarvis.computer.service import ComputerService
+from jarvis.computer.commands import local_computer_intent, ground_computer_intent
+from jarvis.computer.platform import ApplicationNotFound
+from jarvis.ui.computer_hub import ComputerHub
 
 
 class AIProviderConnectionDialog(tk.Toplevel):
@@ -107,6 +111,9 @@ class JarvisApp(tk.Tk):
         self.tasks = TaskStore(Path("data") / "jarvis.db")
         self.planner = TaskPlanner(self.tasks)
         self.office = OfficeService()
+        self.computer = ComputerService()
+        self.computer_window = None
+        self._metrics_running = False
         self.office_window = None
         self._office_retries = {}
         self.ai = build_ai(self.active_connection)
@@ -164,11 +171,11 @@ class JarvisApp(tk.Tk):
         sidebar = tk.Frame(parent, bg=theme.PANEL, highlightbackground=theme.BORDER, highlightthickness=1)
         sidebar.grid(row=0, column=0, rowspan=2, sticky="nsew", padx=(0, 10))
         tk.Label(sidebar, text="NAVIGATION", bg=theme.PANEL, fg=theme.MUTED, font=(theme.MONO, 8, "bold")).pack(anchor="w", padx=15, pady=(18, 8))
-        for label in ("⌘  Command Center", "◌  AI Core", "▣  Agents", "▤  Assignments", "▦  Office Studio", "▤  Memory", "▢  Conversations", "⌁  Tools & Skills"):
+        for label in ("⌘  Command Center", "◌  AI Core", "▣  Agents", "▤  Assignments", "▦  Office Studio", "▧  Computer Hub", "▤  Memory", "▢  Conversations", "⌁  Tools & Skills"):
             active = "Command" in label
-            item = tk.Label(sidebar, text=label, anchor="w", bg=theme.PANEL_ALT if active else theme.PANEL, fg=theme.CYAN_SOFT if active else theme.TEXT, font=(theme.FONT, 9), padx=13, pady=9, cursor="hand2" if label in {"▣  Agents", "▤  Assignments", "▦  Office Studio"} else "")
+            item = tk.Label(sidebar, text=label, anchor="w", bg=theme.PANEL_ALT if active else theme.PANEL, fg=theme.CYAN_SOFT if active else theme.TEXT, font=(theme.FONT, 9), padx=13, pady=7, cursor="hand2" if label in {"▣  Agents", "▤  Assignments", "▦  Office Studio", "▧  Computer Hub", "⌁  Tools & Skills"} else "")
             item.pack(fill="x", padx=8, pady=2)
-            if label in {"▣  Agents", "▤  Assignments", "▦  Office Studio"}:
+            if label in {"▣  Agents", "▤  Assignments", "▦  Office Studio", "▧  Computer Hub", "⌁  Tools & Skills"}:
                 HoverEffect(item, background=theme.PANEL, foreground=theme.TEXT)
             if label == "▣  Agents":
                 item.bind("<Button-1>", lambda _event: self._show_agents_section())
@@ -176,6 +183,8 @@ class JarvisApp(tk.Tk):
                 item.bind("<Button-1>", lambda _event: self._show_assignments_section())
             elif label == "▦  Office Studio":
                 item.bind("<Button-1>", lambda _event: self._show_office_studio())
+            elif label in {'▧  Computer Hub', '⌁  Tools & Skills'}:
+                item.bind('<Button-1>', lambda _event: self._show_computer_hub())
         voice = Panel(sidebar, "Voice status", accent=theme.GREEN)
         voice.pack(side="bottom", fill="x", padx=10, pady=12)
         self.voice_status = tk.Label(voice.body, text="AZURE • TAYYOR" if self.voice.configured else "AZURE • ULANMAGAN", bg=theme.PANEL, fg=theme.GREEN, font=(theme.MONO, 8, "bold"))
@@ -296,7 +305,7 @@ class JarvisApp(tk.Tk):
         threading.Thread(target=self._reply, args=(message,), daemon=True).start()
 
     def _reply(self, message: str) -> None:
-        conversion = local_conversion_intent(message)
+        conversion = local_conversion_intent(message) or local_computer_intent(message)
         if conversion is not None:
             self.events.put(("intent", conversion))
             return
@@ -312,7 +321,7 @@ class JarvisApp(tk.Tk):
                     if intent.is_command:
                         if intent.command in OFFICE_ACTIONS:
                             intent = self._validate_office_intent(message, intent)
-                        agent_key = "office" if intent.command in OFFICE_ACTIONS else {"browser": "browser", "computer": "desktop", "media": "music", "voice": "voice"}.get(intent.category, "automation")
+                        agent_key = ('files' if intent.command == 'computer_action' else "office" if intent.command in OFFICE_ACTIONS else {"browser": "browser", "computer": "desktop", "media": "music", "voice": "voice"}.get(intent.category, "automation"))
                         assigned = self.connections.connection_for(agent_key)
                         if agent_key != "office" and assigned and self.active_connection and assigned.id != self.active_connection.id:
                             try:
@@ -323,6 +332,7 @@ class JarvisApp(tk.Tk):
                                     "desktop": DESKTOP_ACTIONS | {"run_app", "workflow"},
                                     "music": {"play_music", "stop_music", "close_music", "resume_music", "next_music", "previous_music", "volume_up", "volume_down"},
                                     "voice": {"speak"},
+                                    'files': {'computer_action'},
                                 }.get(agent_key, set())
                                 if candidate and candidate.is_command and candidate.command in allowed_for_agent:
                                     intent = candidate
@@ -330,6 +340,7 @@ class JarvisApp(tk.Tk):
                             except AIError as error:
                                 self.events.put(("agent_note", f"{agent_key} AI ulanishi javob bermadi: {error}. Default reja ishlatiladi."))
                     intent = self._ground_theme_intent(message, intent)
+                    intent = ground_computer_intent(message, intent)
                     self.events.put(("intent", intent))
                     return
                 except AIError as error:
@@ -345,6 +356,21 @@ class JarvisApp(tk.Tk):
             return
         response = self.agent.respond(message)
         self.events.put(("response", response.text))
+
+    def _show_computer_hub(self):
+        if self.computer_window is not None and self.computer_window.winfo_exists():
+            self.computer_window.lift()
+            return
+        self.computer_window = ComputerHub(self, self.computer, self._submit_computer_task, self.tasks.get)
+
+    def _submit_computer_task(self, data):
+        task = self.planner.plan_ai_command('computer_action', json.dumps(data, ensure_ascii=False), 'files')
+        self._refresh_tasks()
+        if task.requires_approval:
+            self._add_feed(f'TASK #{task.id}: {task.title}. Tasks panelida parametrlarni tekshirib tasdiqlang.', theme.AMBER)
+        else:
+            self._approve_task(task.id)
+        return task
 
     def _toggle_voice(self) -> None:
         if not self.voice.configured:
@@ -612,6 +638,10 @@ class JarvisApp(tk.Tk):
 
     def _execute_task(self, task: Task) -> None:
         try:
+            if task.action == 'computer_action':
+                result = self.computer.run(json.loads(task.payload), approved=task.requires_approval)
+                self.events.put(('task_done', (task, COMPLETED, result)))
+                return
             if task.action in OFFICE_ACTIONS:
                 ai = build_ai(self.connections.connection_for("office")) if task.action == "office_create" else None
                 self.events.put(("agent_note", "Office Agent: " + ("AI mazmun yaratmoqda..." if task.action == "office_create" else "Fayl lokal konvertatsiya qilinmoqda...")))
@@ -623,6 +653,9 @@ class JarvisApp(tk.Tk):
             action = "browser_open" if task.action == "open_url" else task.action
             result = execute_automation(action, task.payload) if action in BROWSER_ACTIONS | DESKTOP_ACTIONS | {"workflow"} else execute(task)
             self.events.put(("task_done", (task, COMPLETED, result)))
+        except ApplicationNotFound as error:
+            self.events.put(('task_done', (task, FAILED, str(error))))
+            self.events.put(('app_missing', error.name))
         except Exception as error:
             self.events.put(("task_done", (task, FAILED, str(error))))
 
@@ -652,8 +685,17 @@ class JarvisApp(tk.Tk):
                     self._idle_later(3300)
                 elif kind == "agent_note":
                     self._add_feed(str(message), theme.CYAN)
+                elif kind == 'metrics':
+                    self._metrics_running = False
+                    if message is not None:
+                        self.cpu_value.set_value(f'{message.cpu_percent}%')
+                        self.ram_value.set_value(f'{message.memory_percent}%')
+                        self.disk_value.set_value(f'{message.disk_percent}%')
                 elif kind == "office_artifact":
                     self._add_feed("OFFICE: " + message.path.name + " tayyor. Office Studio → TAYYOR FAYLLAR orqali oching.", theme.GREEN)
+                elif kind == 'app_missing':
+                    if messagebox.askyesno('Ilova topilmadi', f'{message} o‘rnatilgan ilovalar orasida topilmadi.\nMicrosoft Store qidiruvini ochaymi?\nAvtomatik o‘rnatilmaydi; tanlov sizda.', parent=self):
+                        self._submit_computer_task({'skill': 'store_search', 'args': {'name': str(message)}})
                 elif kind == "task_progress":
                     task_id, note = message
                     if self.tasks.get(task_id).status == RUNNING:
@@ -667,13 +709,13 @@ class JarvisApp(tk.Tk):
                     if intent.command != "speak":
                         self._speak_reply(intent.reply)
                     if intent.is_command:
-                        if intent.command in OFFICE_ACTIONS:
+                        if intent.command in OFFICE_ACTIONS | {'computer_action'}:
                             try:
-                                task = self.planner.plan_ai_command(intent.command, intent.target, "office")
+                                task = self.planner.plan_ai_command(intent.command, intent.target, 'files' if intent.command == 'computer_action' else "office")
                             except ValueError as error:
                                 self._add_feed(str(error), theme.RED)
                                 self.voice.resume_listening()
-                                self.reactor.set_state("idle", "OFFICE TOPSHIRIG'INI ANIQLASHTIRING")
+                                self.reactor.set_state("idle", "TOPSHIRIQNI ANIQLASHTIRING")
                                 continue
                         elif intent.command == "workflow":
                             task = self.tasks.create(f"Workflow: {intent.reply}", "automation", "workflow", intent.target)
@@ -771,10 +813,15 @@ class JarvisApp(tk.Tk):
     def _tick(self) -> None:
         now = datetime.now()
         self.clock.configure(text=now.strftime("%A, %d %B  •  %H:%M:%S"))
-        metrics = system_metrics()
-        self.cpu_value.set_value("ACTIVE")
-        self.ram_value.set_value(f"{metrics.memory_percent}%")
-        self.disk_value.set_value(f"{metrics.disk_percent}%")
+        if not self._metrics_running:
+            self._metrics_running = True
+            def read_metrics():
+                try:
+                    metrics = system_metrics()
+                except (OSError, RuntimeError):
+                    metrics = None
+                self.events.put(('metrics', metrics))
+            threading.Thread(target=read_metrics, daemon=True).start()
         self.after(1000, self._tick)
 
     def _close(self) -> None:

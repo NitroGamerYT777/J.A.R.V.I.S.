@@ -5,7 +5,7 @@ import tkinter as tk
 
 from jarvis.ui import theme
 from jarvis.ui.widgets import Reactor
-from jarvis.ui.effects import ActivityWave, motion_clock, blend
+from jarvis.ui.effects import ActivityWave, NeuralRibbon, motion_clock, blend
 
 
 class Reactor3D(tk.Frame):
@@ -25,6 +25,8 @@ class Reactor3D(tk.Frame):
         self.hint.pack(side="bottom", fill="x")
         self.wave = ActivityWave(self, lambda: self.mode)
         self.wave.pack(side="bottom", fill="x")
+        self.ribbon = NeuralRibbon(self, state=lambda: self.mode, height=28)
+        self.ribbon.pack(side='bottom', fill='x')
         motion_clock(self).subscribe(self, self._animate_status)
         try:
             from jarvis.ui.native3d import CoreViewport

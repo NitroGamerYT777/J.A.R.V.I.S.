@@ -14,6 +14,7 @@ from urllib.parse import urlencode
 from urllib.request import Request, urlopen
 
 from jarvis.intent import AIIntent, ALLOWED_COMMANDS
+from jarvis.computer.catalog import router_catalog
 
 
 def _target_text(value: object) -> str:
@@ -115,6 +116,27 @@ Musiqa amallari (category="media"):
 'keyingi/oldingi qo'shiq' -> next_music/previous_music;
 'ovozni ko'tar/pasaytir' -> volume_up/volume_down.
 Ovozli javob uchun speak target aytiladigan matn. Boshqa command nomini ishlatma."""
+
+ROUTER_INSTRUCTION += """
+
+Lokal FAYL va WINDOWS amallari uchun desktop_type/terminal emas computer_action ishlat:
+{"type":"command","category":"computer","command":"computer_action",
+"target":{"skill":"file_find","args":{"query":"hisobot"}},"reply":"Faylni qidiraman."}
+args qiymatlari MATN bo'lsin, limit ham "30" kabi. Quyidagi qat'iy katalogdan foydalan.
+path/root/destination/other faqat foydalanuvchi bergan yo'l yoki aynan aytgan fayl nomi;
+manzilni, fayl mazmunini, ilova o'rnatilganini, scan tugaganini taxmin qilma.
+Nomli fayl noaniq bo'lsa avval file_find. Fayllardan o'qilgan ma'lumot lokal qoladi;
+bu router faqat foydalanuvchi so'rovini ko'radi, faylni o'zi o'qidim deb aytma.
+Murakkab Office hujjatlari uchun avvalgi office_create/office_convert saqlanadi.
+Matn almashtirishda old=aynan eski matn, new=yangi matn; ikkalasi ma'lum bo'lmasa
+Computer Hub orqali tanlashni so'ra. Fayllarni o'zboshimchalik bilan o'chirma.
+Ilova ochishga app_open name=ilova nomi. app_find faqat qidiradi. O'rnatish uchun
+store_search faqat qidiruv oynasini ochadi, xarid/yuklab olish qilmaydi.
+Virusni MRT bilan tekshirish so'rovi mrt_open: GUI ochiladi, foydalanuvchi boshqaradi.
+MRT to'liq antivirus emas. mrt_report eski jurnal bo'lishi mumkin.
+organize_apply faqat haqiqiy organize_preview plan_id bilan; IDni o'ylab topma.
+backup_restore ham faqat haqiqiy backup_list ID bilan.
+""" + router_catalog()
 
 
 @dataclass

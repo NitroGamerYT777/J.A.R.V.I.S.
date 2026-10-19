@@ -351,7 +351,11 @@ class DesktopAutomation:
                 args = data.get("args", [])
                 if not program or not isinstance(args, list) or any(not isinstance(arg, str) for arg in args):
                     raise ValueError("desktop_launch uchun program va args ro'yxati kerak.")
-                subprocess.Popen([program, *args], shell=False)
+                try:
+                    subprocess.Popen([program, *args], shell=False)
+                except FileNotFoundError as error:
+                    from jarvis.computer.platform import ApplicationNotFound
+                    raise ApplicationNotFound(program) from error
                 return f"{program} ishga tushirildi."
             if action in {"desktop_type", "desktop_hotkey", "desktop_press", "desktop_scroll"} and self.target_window_title:
                 matches = gui.getWindowsWithTitle(self.target_window_title)

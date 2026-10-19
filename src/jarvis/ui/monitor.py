@@ -13,11 +13,12 @@ class SystemMetrics:
 
 
 def system_metrics() -> SystemMetrics:
-    """Read harmless local system indicators without third-party dependencies."""
+    """Read local indicators; called on a worker so slow disks cannot freeze Tk."""
+    import psutil
     memory = _memory_percent()
     disk = shutil.disk_usage(".")
     disk_percent = round((disk.used / disk.total) * 100) if disk.total else 0
-    return SystemMetrics(memory_percent=memory, disk_percent=disk_percent, cpu_percent=None)
+    return SystemMetrics(memory_percent=memory, disk_percent=disk_percent, cpu_percent=round(psutil.cpu_percent(interval=.1)))
 
 
 def _memory_percent() -> int:

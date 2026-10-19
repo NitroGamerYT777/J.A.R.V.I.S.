@@ -59,6 +59,7 @@ void main(){uv=gl_MultiTexCoord0.xy; gl_Position=gl_Vertex;}
 POST_FRAGMENT = """#version 120
 varying vec2 uv;
 uniform sampler2D sceneMap; uniform vec2 pixel;
+uniform float hudTime; uniform vec3 hudColor;
 vec3 bright(vec2 p){return max(texture2D(sceneMap,p).rgb-vec3(.8),vec3(0.));}
 void main(){
     vec3 c=texture2D(sceneMap,uv).rgb, glow=vec3(0.);
@@ -68,6 +69,19 @@ void main(){
     }
     c+=glow*(.65/19.2);
     c=clamp((c*(2.51*c+.03))/(c*(2.43*c+.59)+.14),0.,1.);
+    // Analytic background HUD: no new geometry or CPU particle allocations.
+    float background=1.-smoothstep(.025,.18,max(c.r,max(c.g,c.b)));
+    vec2 p=uv-.5;
+    vec2 grid=abs(fract(uv*vec2(32.,22.))-.5);
+    float fine=(1.-smoothstep(.005,.025,min(grid.x,grid.y)))*.035;
+    vec2 cell=floor((uv+vec2(hudTime*.003,0.))*vec2(55.,32.));
+    vec2 dotPos=fract((uv+vec2(hudTime*.003,0.))*vec2(55.,32.))-.5;
+    float seed=fract(sin(dot(cell,vec2(127.1,311.7)))*43758.5453);
+    float star=(1.-smoothstep(.02,.09,length(dotPos)))*step(.91,seed)*(.25+.2*sin(hudTime*2.+seed*35.));
+    float radius=length(p*vec2(1.35,1.));
+    float ring=(1.-smoothstep(.001,.004,abs(radius-.43)))*(.2+.8*step(.65,fract(atan(p.y,p.x)*8.+hudTime*.15)))*.13;
+    float sweep=exp(-abs(uv.y-fract(hudTime*.035))*180.)*.04;
+    c+=hudColor*(fine+star+ring+sweep)*background;
     gl_FragColor=vec4(pow(c,vec3(1./2.2)),1.);
 }
 """
@@ -136,7 +150,7 @@ class CoreViewport(OpenGLFrame):
         self.post = compileProgram(compileShader(QUAD_VERTEX, gl.GL_VERTEX_SHADER), compileShader(POST_FRAGMENT, gl.GL_FRAGMENT_SHADER))
         self.uniforms = {name:gl.glGetUniformLocation(self.program, name) for name in
                          ("baseColor", "emission", "metal", "rough", "strength", "pulse", "textured", "baseMap", "emissionMap")}
-        self.post_uniforms = {name:gl.glGetUniformLocation(self.post, name) for name in ("sceneMap", "pixel")}
+        self.post_uniforms = {name:gl.glGetUniformLocation(self.post, name) for name in ("sceneMap", "pixel", "hudTime", "hudColor")}
         model = load_model()
         for encoded in model.images:
             pixels = np.asarray(Image.open(io.BytesIO(encoded)).convert("RGBA"))
@@ -192,6 +206,11 @@ class CoreViewport(OpenGLFrame):
     def redraw(self):
         if self.closed or not self.ready:
             return
+        if not self.winfo_viewable():
+            self.animate = 150
+            self.last_frame = time.perf_counter()
+            return
+        self.animate = 33 if self.motion_enabled else 150
         now=time.perf_counter(); delta=min(now-self.last_frame,.1); self.last_frame=now
         if not self.motion_enabled:
             delta=0.
@@ -234,6 +253,9 @@ class CoreViewport(OpenGLFrame):
         gl.glBindTexture(gl.GL_TEXTURE_2D,self.color_buffer)
         gl.glUniform1i(self.post_uniforms["sceneMap"],0)
         gl.glUniform2f(self.post_uniforms["pixel"],1/width,1/height)
+        gl.glUniform1f(self.post_uniforms['hudTime'], self.elapsed)
+        color = {'thinking': (1.,.58,.1), 'speaking': (.1,1.,.65)}.get(self.mode, (.1,.75,1.))
+        gl.glUniform3f(self.post_uniforms['hudColor'], *color)
         gl.glBegin(gl.GL_QUADS)
         for u,v,x,y in ((0,0,-1,-1),(1,0,1,-1),(1,1,1,1),(0,1,-1,1)):
             gl.glTexCoord2f(u,v); gl.glVertex2f(x,y)

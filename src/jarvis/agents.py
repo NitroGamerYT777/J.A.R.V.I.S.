@@ -21,7 +21,7 @@ AGENTS = (
     AgentProfile("openai", "OpenAI API", "GPT modellari", False, "#6ee7c8"),
     AgentProfile("groq", "Groq API", "Juda tez LLM inference", False, "#ff9f66"),
     AgentProfile("openrouter", "OpenRouter", "Ko'p modelga bitta ulanish", False, "#88b8ff"),
-    AgentProfile("files", "File Agent", "Fayllar bilan ishlash", False, "#9e7bff"),
+    AgentProfile("files", "Computer Agent", "50 lokal fayl va Windows qobiliyati", True, "#9e7bff"),
     AgentProfile("office", "Office Agent", "Word, Excel, PowerPoint va konvertatsiya", find_spec("docx") is not None and find_spec("openpyxl") is not None and find_spec("pptx") is not None, "#70c9ff"),
     AgentProfile("browser", "Browser Agent", "Veb sahifalarni ochish", find_spec("selenium") is not None, "#42b8ff"),
     AgentProfile("desktop", "Desktop Agent", "Ekran va klaviatura", find_spec("pyautogui") is not None and find_spec("pyperclip") is not None, "#42d9ff"),

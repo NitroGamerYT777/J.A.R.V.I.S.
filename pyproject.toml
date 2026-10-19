@@ -3,7 +3,7 @@ name = "jarvis"
 version = "0.1.0"
 description = "Modular personal assistant foundation"
 requires-python = ">=3.11"
-dependencies = ["yt-dlp>=2025.1.15", "selenium>=4.30", "PyAutoGUI>=0.9.54", "pyperclip>=1.9", "numpy>=2", "Pillow>=10.4", "PyOpenGL>=3.1.7", "pyopengltk>=0.0.4", "azure-cognitiveservices-speech>=1.40", "python-docx>=1.1", "openpyxl>=3.1", "python-pptx>=1.0", "pypdf>=5", "pywin32>=308; sys_platform == 'win32'"]
+dependencies = ["yt-dlp>=2025.1.15", "selenium>=4.30", "PyAutoGUI>=0.9.54", "pyperclip>=1.9", "numpy>=2", "Pillow>=10.4", "PyOpenGL>=3.1.7", "pyopengltk>=0.0.4", "azure-cognitiveservices-speech>=1.40", "python-docx>=1.1", "openpyxl>=3.1", "python-pptx>=1.0", "pypdf>=5", "psutil>=6.0", "Send2Trash>=1.8", "pywin32>=308; sys_platform == 'win32'"]
 
 [project.scripts]
 jarvis = "jarvis.cli:main"

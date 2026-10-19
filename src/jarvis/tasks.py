@@ -112,6 +112,12 @@ class TaskPlanner:
     def plan_ai_command(self, command: str, target: str, agent_key: str = "automation") -> Task | None:
         """Turn only an allow-listed, validated LLM command into a reviewable task."""
         target = target.strip()
+        if command == 'computer_action':
+            import json
+            from jarvis.computer.catalog import validate_action
+            skill, args = validate_action(json.loads(target))
+            payload = json.dumps({'skill': skill.key, 'args': args}, ensure_ascii=False)
+            return self.store.create(skill.title, 'files', command, payload)
         if command in {"office_create", "office_convert"}:
             import json
             from jarvis.office.service import validate_request
@@ -160,21 +166,8 @@ def execute(task: Task) -> str:
     if task.action == "manual":
         return "Vazifa ro'yxatga olindi."
     if task.action == "run_app":
-        safe_apps = {
-            "notepad": "notepad.exe", "bloknot": "notepad.exe",
-            "calculator": "calc.exe", "kalkulyator": "calc.exe",
-            "explorer": "explorer.exe", "fayl menejeri": "explorer.exe",
-            "settings": "ms-settings:", "sozlamalar": "ms-settings:",
-        }
-        app = safe_apps.get(task.payload.casefold())
-        if not app:
-            raise ValueError("Bu ilova xavfsiz ruxsat ro'yxatida yo'q. Hozircha Notepad, Calculator, Explorer yoki Settings so'rang.")
-        if app == "ms-settings:":
-            os.startfile(app)  # type: ignore[attr-defined]
-        else:
-            import subprocess
-            subprocess.Popen([app])
-        return f"{task.payload} ishga tushirish so'rovi yuborildi."
+        from jarvis.computer.platform import applications
+        return applications.open_app(task.payload)
     if task.action == "play_music":
         from jarvis.music import player
         return player.play(task.payload)

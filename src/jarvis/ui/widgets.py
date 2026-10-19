@@ -18,6 +18,7 @@ class Panel(tk.Frame):
         self.accent = accent
         self._glow = 0.
         self._hovered = False
+        self._chrome_style = None
         self.bind("<Enter>", lambda _: setattr(self, "_hovered", True), add="+")
         self.bind("<Leave>", lambda _: setattr(self, "_hovered", False), add="+")
         header = tk.Frame(self, bg=theme.PANEL)
@@ -38,9 +39,13 @@ class Panel(tk.Frame):
     def _animate_chrome(self, elapsed, delta, enabled):
         target = 1. if self._hovered else 0.
         self._glow = approach(self._glow, target, delta) if enabled else target
-        self.configure(highlightbackground=blend(theme.BORDER, self.accent, self._glow*.65))
         brightness = .55+.3*math.sin(elapsed*1.8) if enabled else .7
-        self.indicator.configure(fg=blend(theme.BORDER, self.accent, brightness))
+        style = (blend(theme.BORDER, self.accent, self._glow*.65), blend(theme.BORDER, self.accent, brightness))
+        if self._chrome_style is None or style[0] != self._chrome_style[0]:
+            self.configure(highlightbackground=style[0])
+        if self._chrome_style is None or style[1] != self._chrome_style[1]:
+            self.indicator.configure(fg=style[1])
+        self._chrome_style = style
 
 
 class Reactor(tk.Canvas):
