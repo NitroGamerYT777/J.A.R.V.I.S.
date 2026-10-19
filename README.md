@@ -116,9 +116,22 @@ Browser Agent o'zining alohida Chrome profilini ishlatadi. Selenium Manager biri
 Rasmlar asosida qayta qurilgan **JARVIS 3D modeli** asosiy Tkinter oynasiga ulangan. Alohida brauzer preview'i ham `assets/3d/` ichida mavjud: `python scripts/preview_jarvis_core.py` ni ishga tushirib, `http://127.0.0.1:8766` manzilini oching. Statik va animatsiyali GLB fayllari, teksturalar hamda qayta yaratish yo'riqnomasi [3D model hujjati](assets/3d/README.md)da.
 
 1. Matnli buyruqlar va lokal xotira — tayyor.
-2. Ovozli kirish/chiqish (STT/TTS).
+2. Ovozli kirish/chiqish (STT/TTS) — Azure Speech bilan ulangan.
 3. Kalendar, fayllar, brauzer, aqlli uy va bildirishnomalar uchun alohida modullar.
 4. LLM orqali tabiiy suhbat va rejalashtirish — Gemini bilan tayyor.
 5. Har bir tashqi yoki xavfli amal uchun ruxsat, jurnal va cheklovlar.
 
 JARVIS foydalanuvchi nomidan o‘chirishi, yuborishi, sotib olishi yoki qurilmani boshqarishi mumkin bo‘lgan har qanday amalni bajarishdan oldin aniq tasdiq so‘rashi kerak.
+
+## Azure orqali ovozli suhbat
+
+1. Virtual muhitda `python -m pip install -e ".[dev]"` buyrug'ini bajaring va `python -m jarvis.ui.app` bilan ilovani oching.
+2. [Azure portal](https://portal.azure.com/)da Azure AI Speech resursini yarating. Uning **Keys and Endpoint** bo'limidan Key va Region qiymatlarini oling. Kalitni chat yoki GitHub'ga yubormang.
+3. JARVIS chap panelidagi **AZURE SOZLAMALARI** orqali kalit, region (masalan `eastus`) va Sardor yoki Madina ovozini tanlab saqlang. **OVOZNI SINASH** haqiqiy ulanishni tekshiradi; shunchaki saqlash kalitni tekshirmaydi.
+4. Pastdagi **TINGLASH** tugmasini bosib o'zbekcha gapiring. Matn mavjud AI va task tasdiqlash tizimiga yuboriladi. Avtomatik yuborishni o'chirsangiz, matn faqat yozish maydoniga tushadi.
+
+Standart rejim bitta gapdan keyin mikrofonni to'xtatadi (25 soniyada gap eshitilmasa ham to'xtaydi). Doimiy suhbatni sozlamalarda yoqish mumkin; u ham faqat mikrofon tugmasi bosilganda boshlanadi. JARVIS javob tayyorlayotganda/gapirganda mikrofon vaqtincha to'xtaydi va keyin tiklanadi. **MIKROFONNI O'CHIR** tinglashni, **GAPIRISHNI TO'XTAT** joriy ovozni to'xtatadi; yuqoridagi **OVOZ** javoblarni ovozlashtirishni boshqaradi. 3D yadro tinglash/gapirish holatini ko'rsatadi.
+
+Ovoz tili `uz-UZ`, ovozlar `uz-UZ-SardorNeural` va `uz-UZ-MadinaNeural`. Windows standart mikrofon/karnayi ishlatiladi; Windows Settings → Privacy & security → Microphone orqali desktop ilovalarga mikrofon ruxsatini bering. Quloqchin tashqi musiqa mikrofon orqali buyruq sifatida eshitilishining oldini olishga yordam beradi.
+
+Kalit Windows foydalanuvchisiga bog'langan DPAPI bilan shifrlanib, Git e'tiborsiz qoldiradigan `data/voice.json` fayliga saqlanadi. Muqobil ravishda lokal `.env` ichida `AZURE_SPEECH_KEY` va `AZURE_SPEECH_REGION` berish mumkin. Mikrofon faol bo'lganda audio Azure xizmatiga yuboriladi, dastur audio fayllarni saqlamaydi. Internet va haqiqiy Azure Speech resursi kerak; Azure tarif/kvota cheklovlari amal qiladi. 401/403 xatoda kalit va region bir resursga tegishli ekanini tekshiring; audio qurilma xatosida standart mikrofon va ruxsatlarini tekshiring.

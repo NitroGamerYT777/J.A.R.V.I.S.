@@ -42,7 +42,7 @@ def test_out_of_bounds_accessor_is_rejected_before_gpu_upload():
 def test_old_idle_timer_does_not_interrupt_a_new_request():
     callbacks=[]
     reactor=SimpleNamespace(revision=1,set_state=Mock())
-    app=SimpleNamespace(reactor=reactor,after=lambda delay,callback:callbacks.append(callback))
+    app=SimpleNamespace(reactor=reactor,voice=SimpleNamespace(listening=False,speaking=False),after=lambda delay,callback:callbacks.append(callback))
     JarvisApp._idle_later(app,100)
     reactor.revision=2
     callbacks.pop()()

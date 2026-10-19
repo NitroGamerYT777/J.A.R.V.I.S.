@@ -21,7 +21,8 @@ from jarvis.intent import AIIntent
 from jarvis.llm import AIError
 from jarvis.memory import Memory
 from jarvis.tasks import COMPLETED, FAILED, REJECTED, RUNNING, Task, TaskPlanner, TaskStore, execute
-from jarvis.voice import speak
+from jarvis.voice import get_voice
+from jarvis.ui.voice_dialog import VoiceDialog
 from jarvis.ui import theme
 from jarvis.ui.monitor import system_metrics
 from jarvis.ui.widgets import AgentPanel, GlowButton, Panel, TaskPanel
@@ -101,8 +102,10 @@ class JarvisApp(tk.Tk):
         self.planner = TaskPlanner(self.tasks)
         self.ai = build_ai(self.active_connection)
         self.agent = Jarvis(self.memory, ai=self.ai)
-        self.voice_enabled = True
         self.events: queue.Queue[tuple[str, object]] = queue.Queue()
+        self.voice = get_voice()
+        self.voice.emit = lambda kind, value: self.events.put((kind, value))
+        self.voice_enabled = self.voice.settings.output_enabled
         self.title("JARVIS • AI Command Center")
         self.geometry("1360x780")
         self.minsize(980, 620)
@@ -144,6 +147,8 @@ class JarvisApp(tk.Tk):
         self.connection.pack(side="right")
         self.voice_button = GlowButton(header, "🔊 OVOZ: ON", self._toggle_voice, padx=9, pady=4, font=(theme.FONT, 8, "bold"))
         self.voice_button.pack(side="right", padx=(0, 8))
+        if not self.voice_enabled:
+            self.voice_button.configure(text="🔇 OVOZ: OFF")
 
     def _build_sidebar(self, parent: tk.Misc) -> None:
         sidebar = tk.Frame(parent, bg=theme.PANEL, highlightbackground=theme.BORDER, highlightthickness=1)
@@ -159,8 +164,12 @@ class JarvisApp(tk.Tk):
                 item.bind("<Button-1>", lambda _event: self._show_assignments_section())
         voice = Panel(sidebar, "Voice status", accent=theme.GREEN)
         voice.pack(side="bottom", fill="x", padx=10, pady=12)
-        tk.Label(voice.body, text="◉  STANDBY", bg=theme.PANEL, fg=theme.GREEN, font=(theme.MONO, 9, "bold")).pack(pady=(3, 5))
-        tk.Label(voice.body, text="Ovoz moduli keyingi versiyada", bg=theme.PANEL, fg=theme.MUTED, wraplength=135, justify="center", font=(theme.FONT, 8)).pack()
+        self.voice_status = tk.Label(voice.body, text="AZURE • TAYYOR" if self.voice.configured else "AZURE • ULANMAGAN", bg=theme.PANEL, fg=theme.GREEN, font=(theme.MONO, 8, "bold"))
+        self.voice_status.pack(pady=(3, 5))
+        self.voice_partial = tk.Label(voice.body, text="Mikrofon o'chirilgan", bg=theme.PANEL, fg=theme.MUTED, wraplength=135, justify="center", font=(theme.FONT, 8))
+        self.voice_partial.pack()
+        GlowButton(voice.body, "AZURE SOZLAMALARI", self._voice_settings, font=(theme.FONT, 8)).pack(fill="x", pady=5)
+        GlowButton(voice.body, "GAPIRISHNI TO'XTAT", self.voice.stop_speaking, font=(theme.FONT, 8)).pack(fill="x")
 
     def _build_centre(self, parent: tk.Misc) -> None:
         core = Panel(parent, "AI Core Overview")
@@ -231,6 +240,8 @@ class JarvisApp(tk.Tk):
         self.prompt.bind("<FocusIn>", self._clear_hint)
         self.prompt.bind("<Return>", lambda _event: self._send())
         GlowButton(bar, "YUBORISH  ›", self._send, padx=18, pady=7).pack(side="right", padx=10)
+        self.mic_button = GlowButton(bar, "🎙 TINGLASH", self._toggle_mic, padx=12, pady=7)
+        self.mic_button.pack(side="right")
         self.prompt.focus_set()
 
     def _clear_hint(self, _event: tk.Event[tk.Misc]) -> None:
@@ -242,11 +253,14 @@ class JarvisApp(tk.Tk):
         if not message or message == "JARVISga buyruq yoki savol yozing...":
             return
         self.prompt.delete(0, "end")
+        self.voice.suspend_listening()
+        self.voice.stop_speaking()
         planned = self.planner.plan(message)
         if planned:
             self._refresh_tasks()
             self._add_feed(f"TASK #{planned.id}: {planned.title}", theme.AMBER)
             self.reactor.set_state("idle", "TASK RUXSATINI KUTMOQDA" if planned.requires_approval else "VAZIFA REJALASHTIRILDI")
+            self.voice.resume_listening()
             return
         self.reactor.set_state("thinking", "SO'ROV TAHLIL QILINMOQDA")
         self.agent_panel.set_working("core", True)
@@ -299,9 +313,66 @@ class JarvisApp(tk.Tk):
         self.events.put(("response", response.text))
 
     def _toggle_voice(self) -> None:
+        if not self.voice.configured:
+            self._voice_settings()
+            return
         self.voice_enabled = not self.voice_enabled
+        self.voice.settings.output_enabled = self.voice_enabled
+        if not self.voice_enabled:
+            self.voice.stop_speaking()
         self.voice_button.configure(text="🔊 OVOZ: ON" if self.voice_enabled else "🔇 OVOZ: OFF")
         self._add_feed("Voice Agent " + ("yoqildi." if self.voice_enabled else "o'chirildi."), theme.CYAN)
+        try:
+            self.voice.store.save(self.voice.settings)
+        except Exception as error:
+            self._add_feed(str(error), theme.RED)
+
+    def _voice_settings(self):
+        VoiceDialog(self, self.voice, self._voice_saved)
+
+    def _voice_saved(self):
+        self.voice_enabled = self.voice.settings.output_enabled
+        self.voice_button.configure(text="🔊 OVOZ: ON" if self.voice_enabled else "🔇 OVOZ: OFF")
+        self.voice_status.configure(text="AZURE • SOZLANGAN")
+
+    def _toggle_mic(self):
+        if not self.voice.configured:
+            self._voice_settings()
+            return
+        if self.voice.wants_listen:
+            self.voice.stop_listening()
+        else:
+            self.voice.stop_speaking()
+            self.voice.start_listening()
+
+    def _speak_reply(self, text):
+        if self.voice_enabled and self.voice.configured and str(text).strip():
+            self.voice.speak(text)
+        else:
+            self.voice.resume_listening()
+
+    def _voice_event(self, kind, message):
+        if kind == "voice_final":
+            self.voice_partial.configure(text=str(message))
+            self.prompt.delete(0, "end")
+            self.prompt.insert(0, str(message))
+            if self.voice.settings.auto_send:
+                self._send(str(message))
+            else:
+                self.voice.resume_listening()
+        elif kind == "voice_partial":
+            self.voice_partial.configure(text=str(message))
+        elif kind == "voice_state":
+            labels = {"starting": "ULANMOQDA", "listening": "TINGLAYAPMAN", "waiting": "JAVOB KUTILMOQDA", "speaking": "GAPIRYAPMAN", "idle": "TAYYOR"}
+            self.voice_status.configure(text="AZURE • " + labels.get(str(message), str(message)))
+            self.mic_button.configure(text="■ MIKROFONNI O'CHIR" if self.voice.wants_listen else "🎙 TINGLASH")
+            if message in {"listening", "speaking"}:
+                self.reactor.set_state(str(message), labels[str(message)])
+                self._voice_revision = self.reactor.revision
+            elif message == "idle" and getattr(self, "_voice_revision", None) == self.reactor.revision:
+                self.reactor.set_state("idle", "TIZIM TAYYOR")
+        else:
+            self._add_feed(str(message), theme.RED if kind == "voice_error" else theme.AMBER)
 
     @staticmethod
     def _ground_theme_intent(message: str, intent: AIIntent) -> AIIntent:
@@ -464,12 +535,13 @@ class JarvisApp(tk.Tk):
         try:
             while True:
                 kind, message = self.events.get_nowait()
-                if kind == "response":
+                if kind.startswith("voice_"):
+                    self._voice_event(kind, message)
+                elif kind == "response":
                     self.reactor.set_state("speaking", "JAVOB TAYYOR")
                     self.agent_panel.set_working("core", False)
                     self._add_feed("JARVIS: " + str(message), theme.GREEN)
-                    if self.voice_enabled:
-                        speak(str(message))
+                    self._speak_reply(str(message))
                     self._idle_later(3300)
                 elif kind == "agent_note":
                     self._add_feed(str(message), theme.CYAN)
@@ -477,8 +549,8 @@ class JarvisApp(tk.Tk):
                     intent = message
                     self.agent_panel.set_working("core", False)
                     self._add_feed("JARVIS: " + intent.reply, theme.GREEN)
-                    if self.voice_enabled:
-                        speak(intent.reply)
+                    if intent.command != "speak":
+                        self._speak_reply(intent.reply)
                     if intent.is_command:
                         if intent.command == "workflow":
                             task = self.tasks.create(f"Workflow: {intent.reply}", "automation", "workflow", intent.target)
@@ -506,6 +578,7 @@ class JarvisApp(tk.Tk):
                         self.reactor.set_state("speaking", "JAVOB TAYYOR")
                         self._idle_later(3300)
                 elif kind == "provider_error":
+                    self.voice.resume_listening()
                     self.agent_panel.set_working("core", False)
                     self.reactor.set_state("idle", "AI JAVOBIDA XATO")
                     error = str(message)
@@ -523,6 +596,8 @@ class JarvisApp(tk.Tk):
                             self.connection.configure(text=label, fg=theme.GREEN if self.ai else theme.AMBER)
                 elif kind == "task_done":
                     task, status, result = message  # type: ignore[misc]
+                    if task.action == "speak" and status == FAILED:
+                        self.voice.resume_listening()
                     updated = self.tasks.update(task.id, status, result)
                     if task.action == "play_music":
                         self.lift()
@@ -547,7 +622,7 @@ class JarvisApp(tk.Tk):
     def _idle_later(self, delay: int) -> None:
         revision = self.reactor.revision
         def restore() -> None:
-            if self.reactor.revision == revision:
+            if self.reactor.revision == revision and not self.voice.listening and not self.voice.speaking:
                 self.reactor.set_state("idle", "TIZIM TAYYOR")
         self.after(delay, restore)
 
@@ -564,6 +639,7 @@ class JarvisApp(tk.Tk):
         self.after(1000, self._tick)
 
     def _close(self) -> None:
+        self.voice.close()
         self.memory.close()
         self.tasks.close()
         browser.close()
