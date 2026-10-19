@@ -159,3 +159,28 @@ class VoiceTests(unittest.TestCase):
         self.voice.resume_listening()
         self.voice._jobs.join()
         self.assertTrue(self.voice.listening)
+
+    def test_azure_synthesis_timeout_settings_are_bounded(self):
+        config = Mock()
+        self.voice._sdk.PropertyId = NS(SpeechSynthesis_FrameTimeoutInterval="frame", SpeechSynthesis_RtfTimeoutThreshold="rtf")
+        self.voice._sdk.SpeechConfig = lambda **kwargs: config
+        self.voice._config(self.voice.settings)
+        self.assertEqual(config.set_property.call_count, 2)
+        self.assertEqual(config.set_property.call_args_list[0].args, ("frame", "10000"))
+        self.assertEqual(config.set_property.call_args_list[1].args, ("rtf", "10"))
+
+    def test_synthesis_timeout_does_not_retry_partial_audio_or_stop_conversation(self):
+        self.voice.settings.continuous = True
+        self.voice.start_listening()
+        self.voice._jobs.join()
+        speak = Mock(return_value=Future(NS(reason="canceled", cancellation_details=NS(error_details="Timeout while synthesizing. Current RTF: 3.28 secret-key"))))
+        self.voice._sdk.SpeechSynthesizer = lambda **kwargs: NS(speak_text_async=speak)
+        self.voice.speak("Sinov javobi")
+        self.voice._jobs.join()
+        speak.assert_called_once()
+        self.assertTrue(self.voice.listening)
+        self.assertFalse(self.voice.speaking)
+        errors = [value for kind, value in self.events if kind == "voice_error"]
+        self.assertEqual(len(errors), 1)
+        self.assertIn("Matnli javob", errors[0])
+        self.assertNotIn("secret-key", errors[0])

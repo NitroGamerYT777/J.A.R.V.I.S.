@@ -97,7 +97,7 @@ class OfficeStudio(tk.Toplevel):
         GlowButton(library, "FAYLNI OCHISH", self.open_selected).pack(fill="x", pady=(8, 4))
         GlowButton(library, "MANBA SIFATIDA TANLASH", self.use_selected).pack(fill="x", pady=4)
         GlowButton(library, "NATIJALAR PAPKASI", self.open_folder).pack(fill="x", pady=4)
-        tk.Label(library, text="DOCX / XLSX / PPTX → PDF\nCSV ↔ XLSX, TXT ↔ DOCX\nDOCX / PPTX / PDF → TXT\nPDF skanlari uchun OCR hozircha yo'q.",
+        tk.Label(library, text="DOCX / XLSX / PPTX → PDF\nPPTX → DOCX (matn/jadvallar)\nCSV ↔ XLSX, TXT ↔ DOCX\nDOCX / PPTX / PDF → TXT\nPDF skanlari uchun OCR hozircha yo'q.",
                  justify="left", bg=theme.PANEL, fg=theme.MUTED, font=(theme.FONT, 8)).pack(anchor="w", pady=(10, 0))
         self.paths = []
         self._snapshot = None

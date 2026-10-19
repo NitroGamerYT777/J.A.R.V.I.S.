@@ -85,9 +85,14 @@ class AzureVoice:
             threading.Thread(target=stop, daemon=True).start()
 
     def _config(self, settings):
-        config = self._library().SpeechConfig(subscription=settings.key, region=settings.region)
+        sdk = self._library()
+        config = sdk.SpeechConfig(subscription=settings.key, region=settings.region)
         config.speech_recognition_language = "uz-UZ"
         config.speech_synthesis_voice_name = settings.voice
+        # Busy CPU/network can deliver audio slower than the SDK's strict defaults.
+        if hasattr(config, "set_property") and hasattr(sdk, "PropertyId"):
+            config.set_property(sdk.PropertyId.SpeechSynthesis_FrameTimeoutInterval, "10000")
+            config.set_property(sdk.PropertyId.SpeechSynthesis_RtfTimeoutThreshold, "10")
         return config
 
     def _stop_recognizer(self):
@@ -187,6 +192,8 @@ class AzureVoice:
         details = str(error)
         if self.settings.key:
             details = details.replace(self.settings.key, "[MAXFIY]")
+        if "timeout" in details.casefold() or "timed out" in details.casefold():
+            details = "Ovoz oqimi kechikdi va to'xtadi. Internet/kompyuter yuklanishini tekshiring. Matnli javob va Office tasklari ishlashda davom etadi."
         self.emit("voice_error", "Azure Speech: " + details[:350])
 
     def _run(self):

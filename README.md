@@ -61,6 +61,8 @@ Xato tugagan Office taskini Tasks'da tanlab **QAYTA URINISH**ni bosing. Eski yoz
 
 **TAYYOR FAYLLAR** kutubxonasidan natijani Microsoft Office yoki mos boshqa dasturda oching. Fayllar lokal `data/office/outputs/` papkasiga noyob nom bilan saqlanadi; asl fayl hech qachon ustidan yozilmaydi. Yaratilgan faylni **MANBA SIFATIDA TANLASH** orqali keyingi topshiriqda ishlatish mumkin. Makroslar va AI yozgan dastur kodi bajarilmaydi. Excel formulalari lokal havolalar va ruxsat etilgan funksiyalar bilan cheklanadi; ularning qiymatlari Excel faylni ochib qayta hisoblaganda paydo bo'ladi. Formulaga o'xshash oddiy katak matni avtomatik kodga aylanmaydi. Dizayn hozircha lokal shablonlarga asoslanadi; internetdan rasm qidirish yoki foydalanuvchi shablonini aynan nusxalash bu modulda yo'q.
 
+Promptda **desktopda saqla** yoki **ish stoliga saqla** desangiz, natija kutubxonada qoladi va Windows Desktop papkasiga ham yangi nusxa saqlanadi. OneDrive'ga ko'chirilgan Desktop ham Windows Known Folder manzili orqali aniqlanadi. Mavjud fayl almashtirilmaydi. Model o'zicha boshqa chiqish papkasini tanlay olmaydi; Desktopga nusxa saqlanmasa, kutubxonadagi tayyor fayl yo'li bilan aniq xato beriladi.
+
 ### Manbadan yangi hujjat
 
 **MANBA FAYL → TANLASH** orqali DOCX, XLSX, PPTX, PDF, CSV yoki TXT tanlang va uni qanday qayta ishlashni yozing. Natija yangi hujjat bo'ladi; manbaning dastlabki bezaklari yoki Word tahrirlari aynan saqlanishi kafolatlanmaydi. Manba fayldan **24000 belgigacha matn** Office agentiga ulangan AI xizmatiga yuboriladi. Bunday task avtomatik boshlanmaydi: **Tasks → BATAFSIL KO'RISH** orqali fayl yo'lini ko'rib, yuborishni tasdiqlang. Tasdiqlamasangiz manba matni AI'ga yuborilmaydi. Oddiy yangi hujjat yaratishda faqat yozgan promptingiz yuboriladi.
@@ -70,8 +72,11 @@ Xato tugagan Office taskini Tasks'da tanlab **QAYTA URINISH**ni bosing. Eski yoz
 AI kalitisiz ham ishlaydi. Manbani tanlang, formatni belgilang va **KONVERTATSIYA QILISH**ni bosing:
 
 - DOCX / XLSX / PPTX → PDF (Windows va o'rnatilgan Microsoft Office kerak).
+- PPTX → DOCX: slaydlarning matni va jadvallari slayd tartibida Wordga o'tadi. Rasmlar, izohlar va slayd bezagi aynan ko'chirilmaydi. Matnsiz/rasmli slayd uchun OCR bajarilmaydi.
 - CSV ↔ XLSX. XLSX bir nechta varaqdan iborat bo'lsa, CSV uchun varaq nomini yozing. Hisoblangan formula qiymati keshda yo'q bo'lsa, faylni Excel'da hisoblab saqlash so'raladi.
 - TXT ↔ DOCX; DOCX / PPTX / PDF → TXT (matn olinadi, sahifa bezaklari saqlanmaydi).
+
+To'liq lokal fayl yo'li bilan yozilgan aniq konvertatsiya so'rovlari AI routerini chetlab o'tadi. Masalan, `C:\Documents\slayd.pptx ushbu faylni Word fayl qilib ber` internet/API kalitisiz lokal bajariladi. Bir nechta manba yoki maqsad formati noaniq bo'lsa, dastur taxmin qilib tanlamaydi. AI javobini o'qishda valid JSON obyekt, bitta JSON kod bloki va Gemini'dan kelgan bir nechta javob qismlari qo'llanadi; buzilgan Windows yo'li taxminan "tuzatib" bajarilmaydi.
 
 PDF eksportida alohida Office jarayoni ishlaydi; manba faqat o'qish uchun ochiladi, makroslar va xavfli tashqi bog'lanishlar bloklanadi. Foydalanuvchining ochiq Office jarayoniga qo'shilish xavfsiz bo'lmasa, konvertatsiya xatolik bilan to'xtaydi. Office aktivatsiyasi yoki ochish oynasi to'sqinlik qilsa, uni foydalanuvchi hal qilishi kerak; avtomatik chetlab o'tilmaydi.
 
@@ -182,3 +187,5 @@ Standart rejim bitta gapdan keyin mikrofonni to'xtatadi (25 soniyada gap eshitil
 Ovoz tili `uz-UZ`, ovozlar `uz-UZ-SardorNeural` va `uz-UZ-MadinaNeural`. Windows standart mikrofon/karnayi ishlatiladi; Windows Settings → Privacy & security → Microphone orqali desktop ilovalarga mikrofon ruxsatini bering. Quloqchin tashqi musiqa mikrofon orqali buyruq sifatida eshitilishining oldini olishga yordam beradi.
 
 Kalit Windows foydalanuvchisiga bog'langan DPAPI bilan shifrlanib, Git e'tiborsiz qoldiradigan `data/voice.json` fayliga saqlanadi. Muqobil ravishda lokal `.env` ichida `AZURE_SPEECH_KEY` va `AZURE_SPEECH_REGION` berish mumkin. Mikrofon faol bo'lganda audio Azure xizmatiga yuboriladi, dastur audio fayllarni saqlamaydi. Internet va haqiqiy Azure Speech resursi kerak; Azure tarif/kvota cheklovlari amal qiladi. 401/403 xatoda kalit va region bir resursga tegishli ekanini tekshiring; audio qurilma xatosida standart mikrofon va ruxsatlarini tekshiring.
+
+Azure sintezining audio kadr kutishi 10 soniya, RTF chegarasi 10 qilib sozlangan — qisqa tarmoq/CPU bandligida juda erta timeout bo'lishini kamaytiradi. Bu uzluksiz aloqa kafolati emas. Timeoutda qisman aytilgan audio avtomatik boshidan takrorlanmaydi, mikrofonning doimiy suhbat rejimi tiklanadi; matnli/Office taski mustaqil davom etadi.

@@ -27,7 +27,7 @@ _CONVERSIONS = {
     ".xlsx": (".csv", ".pdf"),
     ".txt": (".docx",),
     ".docx": (".txt", ".pdf"),
-    ".pptx": (".txt", ".pdf"),
+    ".pptx": (".txt", ".pdf", ".docx"),
     ".pdf": (".txt",),
 }
 
@@ -182,6 +182,67 @@ def _pptx_to_text(source: Path) -> str:
         f"Slayd {number}\n" + "\n".join(text for shape in slide.shapes for text in shape_text(shape))
         for number, slide in enumerate(presentation.slides, start=1)
     )
+
+
+def _pptx_to_docx(source: Path, destination: Path) -> str:
+    """Editable slide text and tables, not a claim to reproduce slide artwork."""
+    from docx import Document
+    from docx.shared import Pt
+    from pptx import Presentation
+
+    presentation = Presentation(source)
+    if not 1 <= len(presentation.slides) <= 500:
+        raise ValueError("Wordga konvertatsiya uchun 1–500 ta slayd kerak.")
+    document = Document()
+    document.styles["Normal"].font.name = "Calibri"
+    document.styles["Normal"].font.size = Pt(11)
+    document.core_properties.title = presentation.core_properties.title or source.stem
+    document.add_heading(document.core_properties.title, 0)
+    text_count = cell_count = 0
+    meaningful = False
+
+    def shapes(items):
+        for shape in items:
+            if hasattr(shape, "shapes"):
+                yield from shapes(shape.shapes)
+            else:
+                yield shape
+
+    for number, slide in enumerate(presentation.slides, 1):
+        if number > 1:
+            document.add_page_break()
+        document.add_heading(f"Slayd {number}", 1)
+        for shape in shapes(slide.shapes):
+            if shape.has_table:
+                source_table = shape.table
+                rows, columns = len(source_table.rows), len(source_table.columns)
+                cell_count += rows*columns
+                if rows > 1000 or columns > 50 or cell_count > 50000:
+                    raise ValueError("Slayd jadvallari xavfsiz Word hajmi chegarasidan oshdi.")
+                table = document.add_table(rows=rows, cols=columns)
+                table.style = "Light Shading Accent 1"
+                for row_index, row in enumerate(source_table.rows):
+                    for column, cell in enumerate(row.cells):
+                        text = cell.text.replace("\v", "\n")
+                        table.cell(row_index, column).text = text
+                        text_count += len(text)
+                        meaningful |= bool(text.strip())
+            elif shape.has_text_frame:
+                for paragraph in shape.text_frame.paragraphs:
+                    text = paragraph.text.replace("\v", "\n")
+                    if text.strip():
+                        document.add_paragraph(text)
+                        text_count += len(text)
+                        meaningful = True
+            if text_count > 2_000_000:
+                raise ValueError("Slayd matni Word konvertatsiyasi chegarasidan oshdi.")
+    if not meaningful:
+        raise ValueError("Slaydlarda olinadigan matn/jadval yo'q. Faqat rasmli slaydlar uchun OCR kerak.")
+    stream = io.BytesIO()
+    document.save(stream)
+    with destination.open("xb") as output:
+        output.write(stream.getbuffer())
+    return "python-pptx + python-docx (PPTX → DOCX; slayd matni va jadvallar; rasmlar, izohlar va slayd bezagi ko'chirilmaydi)"
 
 
 def _pdf_to_text(source: Path) -> str:
@@ -355,6 +416,8 @@ def convert_file(source: Path, destination: Path, *, sheet: str | None = None) -
         raise ValueError(f"{extension or '(formatsiz)'} → {target or '(formatsiz)'} aylantirish qo‘llab-quvvatlanmaydi.")
     if target == ".pdf":
         return _office_to_pdf(source, destination)
+    if extension == ".pptx" and target == ".docx":
+        return _pptx_to_docx(source, destination)
     if extension == ".csv":
         return _csv_to_xlsx(source, destination)
     if extension == ".xlsx":

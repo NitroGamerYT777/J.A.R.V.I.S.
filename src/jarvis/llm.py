@@ -4,6 +4,7 @@ import json
 import os
 import time
 import math
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
@@ -20,6 +21,20 @@ def _target_text(value: object) -> str:
     if isinstance(value, (dict, list)):
         return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
     return "" if value is None else str(value)
+
+
+def _json_object(text: str) -> dict:
+    """Accept JSON or a single fenced JSON block; never eval/guess broken paths."""
+    if not isinstance(text, str):
+        raise ValueError("JSON matn bo'lishi kerak")
+    text = text.strip()
+    fenced = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", text, re.I | re.S)
+    if fenced:
+        text = fenced.group(1)
+    value = json.loads(text)
+    if not isinstance(value, dict):
+        raise ValueError("JSON obyekt kerak")
+    return value
 
 
 class AIError(RuntimeError):
@@ -52,9 +67,10 @@ Hujjat matnini bu router javobida yaratma: Office Agent alohida to'liq mazmun ya
 Manbali qayta ishlashda source faqat foydalanuvchi AYNAN bergan to'liq lokal fayl yo'li
 bo'lishi mumkin. Yo'lni taxmin qilma; yo'l yo'q bo'lsa Office bo'limida fayl tanlashni so'ra.
 office_convert: {"source":"foydalanuvchi bergan to'liq fayl yo'li","target_format":"pdf|txt|csv|xlsx|docx",
-"sheet":"XLSX->CSV uchun ixtiyoriy varaq nomi"}. DOCX/XLSX/PPTX->PDF, CSV<->XLSX,
+"sheet":"XLSX->CSV uchun ixtiyoriy varaq nomi"}. DOCX/XLSX/PPTX->PDF, PPTX->DOCX (matn/jadvallar), CSV<->XLSX,
 TXT<->DOCX, DOCX/PPTX/PDF->TXT qo'llanadi; PDF->Word/Excel yoki OCR hozir yo'q.
 Konvertatsiya uchun fayl mazmunini AI'ga yuborma. Natijalar lokal Office kutubxonasiga saqlanadi.
+JSON ichidagi Windows yo'llarida / ishlat, noto'g'ri escape qilingan teskari slash yozma.
 
 Brauzer (Selenium) amallari:
 - browser_open: target URL yoki {"url":"https://example.com"}
@@ -150,11 +166,14 @@ class GeminiAI:
             raise AIError("Gemini API'ga ulanib bo'lmadi. Internetni tekshiring.") from error
 
         try:
-            text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+            candidate = data["candidates"][0]
+            if candidate.get("finishReason") not in {None, "STOP"}:
+                raise AIError("AI buyruq javobini to'liq tugatmadi. Qisqaroq so'rov bilan qayta urinib ko'ring.")
+            text = "".join(part.get("text", "") for part in candidate["content"]["parts"] if not part.get("thought")).strip()
         except (KeyError, IndexError, TypeError, AttributeError) as error:
             raise AIError("Gemini javob bermadi yoki javob xavfsizlik filtri bilan to'xtatildi.") from error
         try:
-            parsed = json.loads(text)
+            parsed = _json_object(text)
             kind = str(parsed.get("type", "answer"))
             reply = str(parsed.get("reply", ""))
             category = str(parsed.get("category", "question"))
@@ -193,6 +212,7 @@ class OpenAICompatibleAI:
                 {"role": "user", "content": message},
             ],
             "temperature": 0.2,
+            "response_format": {"type": "json_object"},
         }
         request = Request(
             self.base_url.rstrip("/") + "/chat/completions",
@@ -204,7 +224,7 @@ class OpenAICompatibleAI:
             with urlopen(request, timeout=30) as response:
                 data = json.loads(response.read().decode("utf-8"))
             text = data["choices"][0]["message"]["content"].strip()
-            parsed = json.loads(text)
+            parsed = _json_object(text)
         except HTTPError as error:
             raise AIError(f"{self.provider_name} API xatosi ({error.code}): {error.read().decode('utf-8', errors='replace')[:250]}") from error
         except URLError as error:
@@ -309,15 +329,13 @@ def _complete_json(ai, instruction: str, message: str, max_tokens: int, progress
             candidate = data["candidates"][0]
             if candidate.get("finishReason") not in {None, "STOP"}:
                 raise AIError("AI hujjatni to'liq tugatmadi. So'rov hajmini kamaytirib qayta urinib ko'ring.")
-            text = "".join(part.get("text", "") for part in candidate["content"]["parts"])
+            text = "".join(part.get("text", "") for part in candidate["content"]["parts"] if not part.get("thought"))
         else:
             choice = data["choices"][0]
             if choice.get("finish_reason") not in {None, "stop"}:
                 raise AIError("AI hujjat javobi tugallanmagan. Qisqaroq topshiriq bering.")
             text = choice["message"]["content"]
-        result = json.loads(text)
-        if not isinstance(result, dict):
-            raise ValueError("object expected")
+        result = _json_object(text)
         return result
     except (KeyError, IndexError, TypeError, ValueError, AttributeError) as error:
         raise AIError(f"{provider} to'liq hujjat JSON obyektini qaytarmadi. Qayta urinib ko'ring.") from error

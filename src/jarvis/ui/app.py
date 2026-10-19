@@ -30,6 +30,8 @@ from jarvis.ui.reactor3d import Reactor3D
 from jarvis.ui.effects import HoverEffect, MetricGauge, ScanStrip, blend, motion_clock
 from jarvis.office import OFFICE_ACTIONS
 from jarvis.office.service import OfficeService, validate_request
+from jarvis.office.commands import local_conversion_intent
+from jarvis.office.destinations import wants_desktop
 from jarvis.ui.office_studio import OfficeStudio
 
 
@@ -294,6 +296,10 @@ class JarvisApp(tk.Tk):
         threading.Thread(target=self._reply, args=(message,), daemon=True).start()
 
     def _reply(self, message: str) -> None:
+        conversion = local_conversion_intent(message)
+        if conversion is not None:
+            self.events.put(("intent", conversion))
+            return
         local_prefixes = ("yordam", "help", "soat nechchi", "vaqt", "time", "eslatma ol:", "eslatmalarim", "eslatmalar", "notes")
         if self.ai and not message.casefold().startswith(local_prefixes):
             for attempt in range(3):
@@ -367,6 +373,10 @@ class JarvisApp(tk.Tk):
             if intent.command == "office_create":
                 # Keep every original requirement rather than trusting a lossy router summary.
                 data["prompt"] = message
+            if wants_desktop(message):
+                data["save_to"] = "desktop"
+            else:
+                data.pop("save_to", None)  # A model may not invent an output destination.
             return AIIntent("command", intent.reply, "office", intent.command, json.dumps(data, ensure_ascii=False))
         except (TypeError, ValueError):
             return AIIntent("answer", "Office topshirig'ini aniqlashtiring: hujjat turi va mavzusini yozing; konvertatsiya uchun Office Studio'da manba faylni tanlang.")
@@ -594,7 +604,7 @@ class JarvisApp(tk.Tk):
         self.agent_panel.set_working(task.agent_key, True)
         self.reactor.set_state("thinking", "TASDIQLANGAN AMAL BAJARILMOQDA")
         assigned = self.connections.connection_for(task.agent_key)
-        if assigned:
+        if assigned and task.action != "office_convert":
             self._add_feed(f"{task.agent_key} agent → {assigned.label} bilan ishga tushdi.", theme.CYAN)
         status = "tasdiqlandi" if task.requires_approval else "ishga tushdi"
         self._add_feed(f"TASK #{task.id} {status}: {task.title}", theme.GREEN)

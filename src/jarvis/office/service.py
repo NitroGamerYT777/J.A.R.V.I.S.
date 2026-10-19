@@ -8,6 +8,7 @@ import uuid
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
+from jarvis.office.destinations import desktop_directory, wants_desktop
 
 FORMATS = frozenset({"docx", "xlsx", "pptx"})
 SOURCE_FORMATS = frozenset({".docx", ".xlsx", ".pptx", ".csv", ".txt", ".pdf"})
@@ -44,17 +45,20 @@ Only use the schema matching the requested FORMAT. Do not add a format/filename/
 class OfficeResult:
     path: Path
     summary: str
+    extra_paths: tuple[Path, ...] = ()
 
 
 def validate_request(action: str, data: dict) -> dict:
     if not isinstance(data, dict):
         raise ValueError("Office topshirig'i JSON obyekt bo'lishi kerak.")
-    allowed = {"format", "prompt", "filename", "source"} if action == "office_create" else {"source", "target_format", "sheet"}
+    allowed = {"format", "prompt", "filename", "source", "save_to"} if action == "office_create" else {"source", "target_format", "sheet", "save_to"}
     if action not in {"office_create", "office_convert"} or set(data)-allowed:
         raise ValueError("Office topshirig'ida ruxsat etilmagan parametr bor.")
     if any(not isinstance(value, str) for value in data.values()):
         raise ValueError("Office parametrlarini matn shaklida kiriting.")
     result = {key: value.strip() for key, value in data.items()}
+    if result.get("save_to", "library") not in {"library", "desktop"}:
+        raise ValueError("Saqlash manzili faqat library yoki desktop bo'lishi mumkin.")
     if action == "office_create":
         if result.get("format") not in FORMATS:
             raise ValueError("Yaratish formati docx, xlsx yoki pptx bo'lishi kerak.")
@@ -197,6 +201,7 @@ class OfficeService:
 
     def run(self, action: str, data: dict, *, ai=None, allow_source_upload: bool = False, progress=None) -> OfficeResult:
         request = validate_request(action, data)
+        save_to = request.get("save_to", "desktop" if wants_desktop(request.get("prompt", "")) else "library")
         source = inspect_source(Path(request["source"])) if request.get("source") else None
         if action == "office_create":
             if ai is None or not callable(getattr(ai, "complete_json", None)):
@@ -252,4 +257,26 @@ class OfficeService:
                     destination.close()
                     output.unlink(missing_ok=True)
                     raise
-        return OfficeResult(output, f"{backend}\nFayl: {output}")
+        extra_paths = ()
+        if save_to == "desktop":
+            try:
+                desktop = desktop_directory()
+                copy = desktop / output.name
+                for attempt in range(5):
+                    try:
+                        destination = copy.open("xb")
+                        break
+                    except FileExistsError:
+                        copy = desktop / self._filename(output.stem, extension)
+                else:
+                    raise ValueError("Desktopda bo'sh fayl nomi topilmadi.")
+                try:
+                    with destination, output.open("rb") as original:
+                        shutil.copyfileobj(original, destination)
+                except Exception:
+                    copy.unlink(missing_ok=True)
+                    raise
+                extra_paths = (copy,)
+            except (OSError, ValueError) as error:
+                raise ValueError(f"Fayl kutubxonada tayyor: {output}. Desktop nusxasi saqlanmadi: {error}") from error
+        return OfficeResult(output, f"{backend}\nFayl: {output}" + (f"\nDesktop nusxasi: {extra_paths[0]}" if extra_paths else ""), extra_paths)
