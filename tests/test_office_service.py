@@ -21,6 +21,12 @@ from jarvis.tasks import COMPLETED, PENDING_APPROVAL, PLANNED, TaskPlanner, Task
 from jarvis.ui.app import JarvisApp
 
 
+@pytest.fixture(autouse=True)
+def no_network_backoff_wait():
+    with patch("jarvis.llm.time.sleep"):
+        yield
+
+
 SPECS = {
     "docx": {"title": "Sinov hisobot", "subtitle": "O'zbekcha hujjat", "sections": [
         {"heading": "Natija", "paragraphs": ["JARVIS tayyorlagan tahrirlanadigan matn."],

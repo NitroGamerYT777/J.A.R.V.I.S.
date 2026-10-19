@@ -2,8 +2,12 @@ from __future__ import annotations
 
 import json
 import os
+import time
+import math
 from dataclasses import dataclass, field
-from typing import Protocol
+from datetime import datetime, timezone
+from email.utils import parsedate_to_datetime
+from typing import Callable, Protocol
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -116,8 +120,8 @@ class GeminiAI:
     def ask(self, message: str) -> str:
         return self.interpret(message).reply
 
-    def complete_json(self, instruction: str, message: str, *, max_tokens: int = 8000) -> dict:
-        return _complete_json(self, instruction, message, max_tokens)
+    def complete_json(self, instruction: str, message: str, *, max_tokens: int = 8000, progress: Callable[[str], None] | None = None) -> dict:
+        return _complete_json(self, instruction, message, max_tokens, progress)
 
     def interpret(self, message: str) -> AIIntent:
         contents = [*self.history, {"role": "user", "parts": [{"text": message}]}]
@@ -178,8 +182,8 @@ class OpenAICompatibleAI:
     def ask(self, message: str) -> str:
         return self.interpret(message).reply
 
-    def complete_json(self, instruction: str, message: str, *, max_tokens: int = 8000) -> dict:
-        return _complete_json(self, instruction, message, max_tokens)
+    def complete_json(self, instruction: str, message: str, *, max_tokens: int = 8000, progress: Callable[[str], None] | None = None) -> dict:
+        return _complete_json(self, instruction, message, max_tokens, progress)
 
     def interpret(self, message: str) -> AIIntent:
         payload = {
@@ -217,7 +221,70 @@ class OpenAICompatibleAI:
         return AIIntent(kind=kind, reply=reply, category=category, command=command, target=target)
 
 
-def _complete_json(ai, instruction: str, message: str, max_tokens: int) -> dict:
+OFFICE_ATTEMPTS = 4
+TRANSIENT_HTTP = frozenset({408, 429, 500, 502, 503, 504})
+
+
+def _office_retry_delay(error, attempt: int) -> float | None:
+    """Respect Retry-After; defer to the user instead of ignoring a long cooldown."""
+    delay = 2. ** attempt
+    hint = error.headers.get("Retry-After") if getattr(error, "headers", None) else None
+    if hint:
+        try:
+            try:
+                seconds = float(hint)
+            except ValueError:
+                date = parsedate_to_datetime(hint)
+                seconds = (date.replace(tzinfo=date.tzinfo or timezone.utc)-datetime.now(timezone.utc)).total_seconds()
+            if math.isfinite(seconds):
+                delay = max(delay, seconds)
+        except (ValueError, TypeError, OverflowError):
+            pass
+    return delay if delay <= 30 else None
+
+
+def _office_http_error(provider: str, code: int, attempts: int) -> AIError:
+    prefix = f"{provider} Office API xatosi ({code}). "
+    if code in {408, 500, 502, 503, 504}:
+        detail = (f"AI xizmati vaqtinchalik band yoki javob bera olmayapti. {attempts} ta urinish bajarildi. "
+                  "Birozdan keyin QAYTA URINISHni bosing. Bu xato kalit noto'g'ri degani emas.")
+    elif code == 429:
+        detail = "So'rovlar limiti yoki kvota cheklovi. Keyinroq qayta urining; davom etsa provayder kvotasini tekshiring."
+    elif code in {401, 403}:
+        detail = "API kaliti yoki modelga kirish ruxsatini Agentlar bo'limida tekshiring."
+    elif code == 404:
+        detail = "Tanlangan model topilmadi. Agentlar bo'limida hisobingizda mavjud modelni tanlang."
+    elif code == 400:
+        detail = "Model bu so'rov yoki JSON rejimini qabul qilmadi. Model imkoniyatlarini tekshiring."
+    else:
+        detail = "Provayder so'rovni qabul qilmadi. Hisob/model sozlamalarini tekshiring."
+    return AIError(prefix + detail)
+
+
+def _office_response(request: Request, provider: str, progress=None) -> bytes:
+    for attempt in range(1, OFFICE_ATTEMPTS+1):
+        try:
+            with urlopen(request, timeout=100) as response:
+                return response.read(2*1024*1024+1)
+        except HTTPError as error:
+            code = error.code
+            delay = _office_retry_delay(error, attempt)
+            error.close()  # Never echo error bodies, source text, or key-bearing URLs.
+            if code not in TRANSIENT_HTTP or attempt == OFFICE_ATTEMPTS or delay is None:
+                raise _office_http_error(provider, code, attempt) from error
+            note = f"{provider} HTTP {code}: xizmat vaqtincha javob bermadi. {delay:g} soniyadan keyin {attempt+1}/{OFFICE_ATTEMPTS}-urinish..."
+        except (URLError, TimeoutError, ConnectionError) as error:
+            if attempt == OFFICE_ATTEMPTS:
+                raise AIError(f"{provider} hujjat so'roviga {attempt} urinishda javob olinmadi. Internetni tekshirib QAYTA URINISHni bosing.") from error
+            delay = 2. ** attempt
+            note = f"{provider} bilan aloqa uzildi. {delay:g} soniyadan keyin {attempt+1}/{OFFICE_ATTEMPTS}-urinish..."
+        if progress:
+            progress(note)
+        time.sleep(delay)
+    raise AIError("Office AI so'rovi tugamadi.")
+
+
+def _complete_json(ai, instruction: str, message: str, max_tokens: int, progress=None) -> dict:
     """Independent structured generation, never an interpreted command or chat history."""
     if isinstance(ai, GeminiAI):
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{ai.model}:generateContent?" + urlencode({"key": ai.api_key})
@@ -234,8 +301,7 @@ def _complete_json(ai, instruction: str, message: str, max_tokens: int) -> dict:
         provider = ai.provider_name
     request = Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
     try:
-        with urlopen(request, timeout=100) as response:
-            raw = response.read(2*1024*1024+1)
+        raw = _office_response(request, provider, progress)
         if len(raw) > 2*1024*1024:
             raise AIError("AI hujjat javobi juda katta.")
         data = json.loads(raw)
@@ -253,11 +319,6 @@ def _complete_json(ai, instruction: str, message: str, max_tokens: int) -> dict:
         if not isinstance(result, dict):
             raise ValueError("object expected")
         return result
-    except HTTPError as error:
-        # Never include source excerpts or secret request URLs in the error feed.
-        raise AIError(f"{provider} Office API xatosi ({error.code}). Model/kalit, kvota va JSON rejimini tekshiring.") from error
-    except (URLError, TimeoutError) as error:
-        raise AIError(f"{provider} hujjat so'roviga javob bermadi. Internetni tekshirib qayta urinib ko'ring.") from error
     except (KeyError, IndexError, TypeError, ValueError, AttributeError) as error:
         raise AIError(f"{provider} to'liq hujjat JSON obyektini qaytarmadi. Qayta urinib ko'ring.") from error
 

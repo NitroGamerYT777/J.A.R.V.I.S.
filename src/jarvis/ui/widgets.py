@@ -179,9 +179,10 @@ class TaskPanel(Panel):
         COMPLETED: theme.GREEN, REJECTED: theme.MUTED, FAILED: theme.RED,
     }
 
-    def __init__(self, parent: tk.Misc, approve: Callable[[int], None], reject: Callable[[int], None], clear_completed: Callable[[], None] | None = None) -> None:
+    def __init__(self, parent: tk.Misc, approve: Callable[[int], None], reject: Callable[[int], None], clear_completed: Callable[[], None] | None = None, retry: Callable[[int], None] | None = None) -> None:
         super().__init__(parent, "Tasks / approval queue", accent=theme.AMBER)
         self.approve, self.reject = approve, reject
+        self.retry = retry
         self.tasks: list[Task] = []
         # Reserve the action toolbar first so a short window only shrinks the list.
         controls = tk.Frame(self.body, bg=theme.PANEL)
@@ -228,7 +229,8 @@ class TaskPanel(Panel):
     def _show_selected(self, _event: tk.Event[tk.Misc] | None = None) -> None:
         task = self._selected_task()
         can_approve = bool(task and task.status == PENDING_APPROVAL)
-        self.approve_button.configure(state="normal" if can_approve else "disabled")
+        can_retry = bool(task and task.status == FAILED and task.action in {"office_create", "office_convert"} and self.retry)
+        self.approve_button.configure(state="normal" if can_approve or can_retry else "disabled", text="QAYTA URINISH" if can_retry else "TASDIQLASH")
         self.reject_button.configure(state="normal" if can_approve else "disabled")
         if not task:
             self.status.configure(text="Tasdiqlanishi kerak bo'lgan amal yo'q.", fg=theme.MUTED)
@@ -242,6 +244,8 @@ class TaskPanel(Panel):
         task = self._selected_task()
         if task and task.status == PENDING_APPROVAL:
             self.approve(task.id)
+        elif task and task.status == FAILED and task.action in {"office_create", "office_convert"} and self.retry:
+            self.retry(task.id)
 
     def _reject_selected(self) -> None:
         task = self._selected_task()

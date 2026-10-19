@@ -195,7 +195,7 @@ class OfficeService:
             stem = "Hujjat_" + stem
         return f"{stem}_{uuid.uuid4().hex[:10]}.{extension}"
 
-    def run(self, action: str, data: dict, *, ai=None, allow_source_upload: bool = False) -> OfficeResult:
+    def run(self, action: str, data: dict, *, ai=None, allow_source_upload: bool = False, progress=None) -> OfficeResult:
         request = validate_request(action, data)
         source = inspect_source(Path(request["source"])) if request.get("source") else None
         if action == "office_create":
@@ -209,7 +209,10 @@ class OfficeService:
             from jarvis.office.renderers import validate_document
             correction = ""
             for attempt in range(2):
-                spec = ai.complete_json(SPEC_INSTRUCTION, prompt+correction, max_tokens=10000)
+                options = {"max_tokens": 10000}
+                if progress is not None:
+                    options["progress"] = progress
+                spec = ai.complete_json(SPEC_INSTRUCTION, prompt+correction, **options)
                 try:
                     validate_document(spec, "." + request["format"])
                     if request["format"] == "pptx":

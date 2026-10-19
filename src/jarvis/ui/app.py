@@ -106,6 +106,7 @@ class JarvisApp(tk.Tk):
         self.planner = TaskPlanner(self.tasks)
         self.office = OfficeService()
         self.office_window = None
+        self._office_retries = {}
         self.ai = build_ai(self.active_connection)
         self.agent = Jarvis(self.memory, ai=self.ai)
         self.events: queue.Queue[tuple[str, object]] = queue.Queue()
@@ -201,7 +202,7 @@ class JarvisApp(tk.Tk):
         self._add_feed("JARVIS tizimi ishga tushdi.", theme.GREEN)
         self._add_feed("AI modeli: " + ("Gemini ulangan" if self.ai else "lokal rejim"), theme.CYAN)
         self._add_feed("Buyruq kutilyapti...", theme.MUTED)
-        self.task_panel = TaskPanel(right, self._approve_task, self._reject_task, self._clear_completed_tasks)
+        self.task_panel = TaskPanel(right, self._approve_task, self._reject_task, self._clear_completed_tasks, retry=self._retry_office_task)
         self.task_panel.grid(row=1, column=0, sticky="nsew")
         self._refresh_tasks()
 
@@ -386,6 +387,24 @@ class JarvisApp(tk.Tk):
             self._add_feed(f"TASK #{task.id}: Manba matni {provider} ga yuborilishi uchun tasdiq kerak. BATAFSIL KO'RISH orqali manbani tekshiring.", theme.AMBER)
         else:
             self._approve_task(task.id)
+        return task
+
+    def _retry_office_task(self, task_id):
+        old = self.tasks.get(task_id)
+        if old.status != FAILED or old.action not in OFFICE_ACTIONS:
+            return None
+        previous = self._office_retries.get(task_id)
+        if previous is not None:
+            try:
+                existing = self.tasks.get(previous)
+            except KeyError:
+                existing = None
+            if existing and existing.action == old.action and existing.payload == old.payload and existing.status in {PLANNED, PENDING_APPROVAL, RUNNING}:
+                return existing
+        # New task, same validated request. Source uploads must be approved again.
+        task = self._submit_office_task(old.action, json.loads(old.payload))
+        self._office_retries[task_id] = task.id
+        self._add_feed(f"TASK #{old.id} qayta so'raldi → TASK #{task.id}.", theme.CYAN)
         return task
 
     def _voice_settings(self):
@@ -586,7 +605,8 @@ class JarvisApp(tk.Tk):
             if task.action in OFFICE_ACTIONS:
                 ai = build_ai(self.connections.connection_for("office")) if task.action == "office_create" else None
                 self.events.put(("agent_note", "Office Agent: " + ("AI mazmun yaratmoqda..." if task.action == "office_create" else "Fayl lokal konvertatsiya qilinmoqda...")))
-                result = self.office.run(task.action, json.loads(task.payload), ai=ai, allow_source_upload=task.requires_approval)
+                result = self.office.run(task.action, json.loads(task.payload), ai=ai, allow_source_upload=task.requires_approval,
+                    progress=lambda note: self.events.put(("task_progress", (task.id, note))))
                 self.events.put(("office_artifact", result))
                 self.events.put(("task_done", (task, COMPLETED, result.summary)))
                 return
@@ -624,6 +644,12 @@ class JarvisApp(tk.Tk):
                     self._add_feed(str(message), theme.CYAN)
                 elif kind == "office_artifact":
                     self._add_feed("OFFICE: " + message.path.name + " tayyor. Office Studio → TAYYOR FAYLLAR orqali oching.", theme.GREEN)
+                elif kind == "task_progress":
+                    task_id, note = message
+                    if self.tasks.get(task_id).status == RUNNING:
+                        self.tasks.update(task_id, RUNNING, str(note))
+                        self._refresh_tasks()
+                        self._add_feed(str(note), theme.AMBER)
                 elif kind == "intent":
                     intent = message
                     self.agent_panel.set_working("core", False)
