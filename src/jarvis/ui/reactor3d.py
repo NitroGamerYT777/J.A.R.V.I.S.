@@ -5,6 +5,7 @@ import tkinter as tk
 
 from jarvis.ui import theme
 from jarvis.ui.widgets import Reactor
+from jarvis.ui.effects import ActivityWave, motion_clock, blend
 
 
 class Reactor3D(tk.Frame):
@@ -22,12 +23,22 @@ class Reactor3D(tk.Frame):
         self.hint = tk.Label(self, text="3D CORE  ·  USHLAB AYLANTIRING  ·  G'ILDIRAK: ZOOM",
                              bg=theme.PANEL, fg=theme.MUTED, font=(theme.MONO, 7))
         self.hint.pack(side="bottom", fill="x")
+        self.wave = ActivityWave(self, lambda: self.mode)
+        self.wave.pack(side="bottom", fill="x")
+        motion_clock(self).subscribe(self, self._animate_status)
         try:
             from jarvis.ui.native3d import CoreViewport
             self.viewport = CoreViewport(self, on_error=self._failed)
             self.viewport.pack(fill="both", expand=True)
         except Exception as error:
             self._failed(error)
+
+    def _animate_status(self, elapsed, delta, enabled):
+        import math
+        color = {"speaking": theme.GREEN, "thinking": theme.AMBER}.get(self.mode, theme.CYAN)
+        self.status.configure(fg=blend(theme.MUTED, color, .75+.2*math.sin(elapsed*2) if enabled else 1.))
+        if self.viewport is not None:
+            self.viewport.motion_enabled = enabled
 
     @property
     def ready(self):

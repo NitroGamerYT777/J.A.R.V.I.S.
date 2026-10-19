@@ -7,7 +7,7 @@ from jarvis.automation import BROWSER_ACTIONS, DESKTOP_ACTIONS
 
 ALLOWED_COMMANDS = frozenset({
     "open_url", "search_web", "run_app", "play_music", "stop_music", "close_music",
-    "resume_music", "next_music", "previous_music", "volume_up", "volume_down", "speak", "workflow",
+    "resume_music", "next_music", "previous_music", "volume_up", "volume_down", "speak", "workflow", "office_create", "office_convert",
 }) | BROWSER_ACTIONS | DESKTOP_ACTIONS
 TARGETLESS_COMMANDS = frozenset({
     "stop_music", "close_music", "resume_music", "next_music", "previous_music", "volume_up", "volume_down",

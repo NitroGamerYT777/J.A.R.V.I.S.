@@ -10,6 +10,7 @@ Python’da yoziladigan, kengaytiriladigan shaxsiy yordamchi. U lokal buyruqlar,
 - `eslatmalarim`
 - Boshqa har qanday savol — Gemini AI javob beradi.
 - `chiqish`
+- Grafik oynada: promptdan Word/Excel/PowerPoint yaratish va lokal konvertatsiya (**Office Studio**).
 
 ## Ishga tushirish
 
@@ -41,6 +42,44 @@ Testlar alohida `pytest` orqali bajariladi:
 ```powershell
 python -m pytest -q
 ```
+
+## Office Studio: Word, Excel va PowerPoint
+
+Yon menyudagi **Office Studio** bo'limida hujjat turini tanlang, to'liq topshiriq yozing va **HUJJATNI YARATISH**ni bosing. Yoki asosiy chatga shunday yozing:
+
+```text
+Sun'iy intellekt haqida o'zbekcha 8 slaydli PowerPoint taqdimoti tayyorla
+Oylik shaxsiy budjet uchun formulali Excel jadvali yarat, summalar namuna ekanini belgilab qo'y
+Maktab direktoriga ariza uchun Word hujjati tayyorla
+```
+
+JARVIS mos Office agentiga topshiriq beradi. AI strukturali JSON mazmun yaratadi, lokal Python modullari esa haqiqiy, tahrirlanadigan `.docx`, `.xlsx`, `.pptx` fayl yaratadi. Word bo'lim/jadval/ro'yxatlari, Excel varaqlari/formulalari/grafiklari hamda PowerPoint slaydlari/jadvallari/izohlari qo'llanadi. Slaydlar soni aniq so'ralsa, AI natijasi tekshiriladi. Noto'g'ri tuzilma bir marta AI orqali qayta tuzatiladi; yana xato bo'lsa, task xato holati bilan tugaydi, yarim tayyor fayl berilmaydi. Bu imkoniyat ishlashi uchun Agentlar bo'limida ishlaydigan API/model ulangan bo'lishi kerak. **Assignments → Office Agent** orqali unga boshqa AI tayinlash mumkin; default Chat AI ishlatiladi.
+
+**TAYYOR FAYLLAR** kutubxonasidan natijani Microsoft Office yoki mos boshqa dasturda oching. Fayllar lokal `data/office/outputs/` papkasiga noyob nom bilan saqlanadi; asl fayl hech qachon ustidan yozilmaydi. Yaratilgan faylni **MANBA SIFATIDA TANLASH** orqali keyingi topshiriqda ishlatish mumkin. Makroslar va AI yozgan dastur kodi bajarilmaydi. Excel formulalari lokal havolalar va ruxsat etilgan funksiyalar bilan cheklanadi; ularning qiymatlari Excel faylni ochib qayta hisoblaganda paydo bo'ladi. Formulaga o'xshash oddiy katak matni avtomatik kodga aylanmaydi. Dizayn hozircha lokal shablonlarga asoslanadi; internetdan rasm qidirish yoki foydalanuvchi shablonini aynan nusxalash bu modulda yo'q.
+
+### Manbadan yangi hujjat
+
+**MANBA FAYL → TANLASH** orqali DOCX, XLSX, PPTX, PDF, CSV yoki TXT tanlang va uni qanday qayta ishlashni yozing. Natija yangi hujjat bo'ladi; manbaning dastlabki bezaklari yoki Word tahrirlari aynan saqlanishi kafolatlanmaydi. Manba fayldan **24000 belgigacha matn** Office agentiga ulangan AI xizmatiga yuboriladi. Bunday task avtomatik boshlanmaydi: **Tasks → BATAFSIL KO'RISH** orqali fayl yo'lini ko'rib, yuborishni tasdiqlang. Tasdiqlamasangiz manba matni AI'ga yuborilmaydi. Oddiy yangi hujjat yaratishda faqat yozgan promptingiz yuboriladi.
+
+### Konvertatsiya
+
+AI kalitisiz ham ishlaydi. Manbani tanlang, formatni belgilang va **KONVERTATSIYA QILISH**ni bosing:
+
+- DOCX / XLSX / PPTX → PDF (Windows va o'rnatilgan Microsoft Office kerak).
+- CSV ↔ XLSX. XLSX bir nechta varaqdan iborat bo'lsa, CSV uchun varaq nomini yozing. Hisoblangan formula qiymati keshda yo'q bo'lsa, faylni Excel'da hisoblab saqlash so'raladi.
+- TXT ↔ DOCX; DOCX / PPTX / PDF → TXT (matn olinadi, sahifa bezaklari saqlanmaydi).
+
+PDF eksportida alohida Office jarayoni ishlaydi; manba faqat o'qish uchun ochiladi, makroslar va xavfli tashqi bog'lanishlar bloklanadi. Foydalanuvchining ochiq Office jarayoniga qo'shilish xavfsiz bo'lmasa, konvertatsiya xatolik bilan to'xtaydi. Office aktivatsiyasi yoki ochish oynasi to'sqinlik qilsa, uni foydalanuvchi hal qilishi kerak; avtomatik chetlab o'tilmaydi.
+
+XLSX → PDF eksportida mahalliy katak havolalari va ruxsat etilgan funksiyalar qayta hisoblanadi; manba faylga saqlanmaydi. Tashqi, foydalanuvchi yozgan funksiya yoki qo'llanmaydigan dinamik formulalar topilsa, eski hisoblangan qiymatlar bilan PDF berish o'rniga aniq xato qaytariladi.
+
+Manba chegarasi 20 MB; makrosli DOCM/XLSM/PPTM, eski DOC/XLS/PPT va parollangan fayllar qabul qilinmaydi. PDF → Word/Excel, skanerdan OCR, murakkab mavjud hujjatni in-place tahrirlash va barcha formatlarni istalgan formatga o'girish hozircha yo'q. Natijani ishlatishdan oldin mazmuni, hisob-kitoblari va bezaklarini tekshiring: AI xato yoki taxminiy ma'lumot berishi mumkin. Office fayllari `data/` ichida qoladi va GitHub'ga qo'shilmaydi.
+
+Office oqimini bulutga ulanmasdan tekshirish: `python scripts/check_office_integration.py`. Bu vaqtinchalik test bazasi, fake AI va test fayllaridan foydalanadi; sizning task tarixingizni tozalamaydi va haqiqiy AI so'rovi yubormaydi.
+
+### Interfeys effektlari
+
+Hover/bosish animatsiyalari, harakatlanuvchi panel chiziqlari, holat to'lqini, RAM/Disk doiraviy indikatorlari va yangi xabar yoritilishi bor. Pastdagi **FX** yoki `Ctrl+Shift+E` dekorativ animatsiyalarni yoqadi/o'chiradi. To'lqin ovoz balandligini o'lchamaydi, ilova holatini tasvirlaydi; CPU'dagi ACTIVE ham foizli CPU o'lchovi emas. 2D interfeys effektlari bitta umumiy taymerda ishlaydi va oyna yashirilganda chizilmaydi.
 
 `tests\\test_agent.py` faylini bevosita ishga tushirish testlarni bajarish usuli emas: `src` tuzilmasidagi `jarvis` paketi u holda avtomatik topilmaydi.
 

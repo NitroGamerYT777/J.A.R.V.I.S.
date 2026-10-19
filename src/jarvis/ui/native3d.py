@@ -79,6 +79,7 @@ class CoreViewport(OpenGLFrame):
         self.ready = False
         self.closed = False
         self.mode = "idle"
+        self.motion_enabled = True
         self.renderer_info = ""
         self.frame_count = 0
         self.meshes = []
@@ -192,6 +193,8 @@ class CoreViewport(OpenGLFrame):
         if self.closed or not self.ready:
             return
         now=time.perf_counter(); delta=min(now-self.last_frame,.1); self.last_frame=now
+        if not self.motion_enabled:
+            delta=0.
         self.elapsed+=delta
         target={"idle":1.,"listening":1.2,"thinking":3.5,"speaking":1.65}.get(self.mode,1.)
         self.speed+=(target-self.speed)*min(1.,delta*3)

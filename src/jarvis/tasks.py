@@ -112,6 +112,16 @@ class TaskPlanner:
     def plan_ai_command(self, command: str, target: str, agent_key: str = "automation") -> Task | None:
         """Turn only an allow-listed, validated LLM command into a reviewable task."""
         target = target.strip()
+        if command in {"office_create", "office_convert"}:
+            import json
+            from jarvis.office.service import validate_request
+            try:
+                request = validate_request(command, json.loads(target))
+            except (ValueError, TypeError) as error:
+                raise ValueError(f"Office topshirig'i noto'g'ri: {error}") from error
+            title = ("Office hujjati: " + request["format"].upper() + " — " + request["prompt"][:65]
+                     if command == "office_create" else "Konvertatsiya: " + Path(request["source"]).name + " → " + request["target_format"].upper())
+            return self.store.create(title, "office", command, json.dumps(request, ensure_ascii=False))
         if command == "open_url":
             address = target if "://" in target else "https://" + target
             if urlparse(address).netloc:

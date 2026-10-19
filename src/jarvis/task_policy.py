@@ -36,6 +36,15 @@ def approval_reason(action: str, payload: str = "", *, _depth: int = 0) -> str:
         return "Amal nomi noto'g'ri shaklda."
     data = _data(payload)
     value = lambda key: str(data.get(key, data.get("value", ""))).strip()
+    if action in {"office_create", "office_convert"}:
+        from jarvis.office.service import validate_request
+        try:
+            request = validate_request(action, data)
+        except (ValueError, TypeError):
+            return "Office topshirig'ining parametrlari tekshirilishi kerak."
+        if action == "office_create" and request.get("source"):
+            return "Tanlangan manba fayldan 24000 belgigacha matn Office agentiga ulangan AI provayderiga yuboriladi: " + request["source"]
+        return ""
     if action == "workflow":
         if _depth >= 2:
             return "Ichma-ich workflow tekshirilishi kerak."

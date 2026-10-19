@@ -27,6 +27,10 @@ from jarvis.ui import theme
 from jarvis.ui.monitor import system_metrics
 from jarvis.ui.widgets import AgentPanel, GlowButton, Panel, TaskPanel
 from jarvis.ui.reactor3d import Reactor3D
+from jarvis.ui.effects import HoverEffect, MetricGauge, ScanStrip, blend, motion_clock
+from jarvis.office import OFFICE_ACTIONS
+from jarvis.office.service import OfficeService, validate_request
+from jarvis.ui.office_studio import OfficeStudio
 
 
 class AIProviderConnectionDialog(tk.Toplevel):
@@ -100,6 +104,8 @@ class JarvisApp(tk.Tk):
         self.active_connection = self.connections.default_connection()
         self.tasks = TaskStore(Path("data") / "jarvis.db")
         self.planner = TaskPlanner(self.tasks)
+        self.office = OfficeService()
+        self.office_window = None
         self.ai = build_ai(self.active_connection)
         self.agent = Jarvis(self.memory, ai=self.ai)
         self.events: queue.Queue[tuple[str, object]] = queue.Queue()
@@ -112,6 +118,7 @@ class JarvisApp(tk.Tk):
         self.configure(bg=theme.BACKGROUND)
         self.protocol("WM_DELETE_WINDOW", self._close)
         self._build()
+        self.bind("<Control-Shift-E>", lambda _: self._toggle_effects())
         self._tick()
         self.after(80, self._read_events)
 
@@ -154,14 +161,18 @@ class JarvisApp(tk.Tk):
         sidebar = tk.Frame(parent, bg=theme.PANEL, highlightbackground=theme.BORDER, highlightthickness=1)
         sidebar.grid(row=0, column=0, rowspan=2, sticky="nsew", padx=(0, 10))
         tk.Label(sidebar, text="NAVIGATION", bg=theme.PANEL, fg=theme.MUTED, font=(theme.MONO, 8, "bold")).pack(anchor="w", padx=15, pady=(18, 8))
-        for label in ("⌘  Command Center", "◌  AI Core", "▣  Agents", "▤  Assignments", "▧  Calendar", "▤  Memory", "▢  Conversations", "⌁  Tools & Skills"):
+        for label in ("⌘  Command Center", "◌  AI Core", "▣  Agents", "▤  Assignments", "▦  Office Studio", "▤  Memory", "▢  Conversations", "⌁  Tools & Skills"):
             active = "Command" in label
-            item = tk.Label(sidebar, text=label, anchor="w", bg=theme.PANEL_ALT if active else theme.PANEL, fg=theme.CYAN_SOFT if active else theme.TEXT, font=(theme.FONT, 9), padx=13, pady=9, cursor="hand2" if label in {"▣  Agents", "▤  Assignments"} else "")
+            item = tk.Label(sidebar, text=label, anchor="w", bg=theme.PANEL_ALT if active else theme.PANEL, fg=theme.CYAN_SOFT if active else theme.TEXT, font=(theme.FONT, 9), padx=13, pady=9, cursor="hand2" if label in {"▣  Agents", "▤  Assignments", "▦  Office Studio"} else "")
             item.pack(fill="x", padx=8, pady=2)
+            if label in {"▣  Agents", "▤  Assignments", "▦  Office Studio"}:
+                HoverEffect(item, background=theme.PANEL, foreground=theme.TEXT)
             if label == "▣  Agents":
                 item.bind("<Button-1>", lambda _event: self._show_agents_section())
             elif label == "▤  Assignments":
                 item.bind("<Button-1>", lambda _event: self._show_assignments_section())
+            elif label == "▦  Office Studio":
+                item.bind("<Button-1>", lambda _event: self._show_office_studio())
         voice = Panel(sidebar, "Voice status", accent=theme.GREEN)
         voice.pack(side="bottom", fill="x", padx=10, pady=12)
         self.voice_status = tk.Label(voice.body, text="AZURE • TAYYOR" if self.voice.configured else "AZURE • ULANMAGAN", bg=theme.PANEL, fg=theme.GREEN, font=(theme.MONO, 8, "bold"))
@@ -222,27 +233,39 @@ class JarvisApp(tk.Tk):
         for label, command in (("⌁  Vaqtni ayt", "soat nechchi"), ("▤  Eslatmalar", "eslatmalarim"), ("◉  Tizim holati", "Joriy tizim holatini qisqacha ayt")):
             GlowButton(quick.body, label, lambda value=command: self._send(value)).pack(fill="x", pady=4)
 
-    def _metric_label(self, parent: tk.Misc, title: str, initial: str) -> tk.Label:
+    def _metric_label(self, parent: tk.Misc, title: str, initial: str) -> MetricGauge:
         box = tk.Frame(parent, bg=theme.PANEL_ALT, highlightbackground=theme.BORDER, highlightthickness=1)
         box.pack(side="left", fill="both", expand=True, padx=3, pady=4)
+        HoverEffect(box)
         tk.Label(box, text=title, bg=theme.PANEL_ALT, fg=theme.MUTED, font=(theme.MONO, 8, "bold")).pack(pady=(12, 2))
-        label = tk.Label(box, text=initial, bg=theme.PANEL_ALT, fg=theme.CYAN, font=(theme.MONO, 12, "bold"))
-        label.pack(pady=(0, 12))
-        return label
+        gauge = MetricGauge(box)
+        gauge.set_value(initial)
+        gauge.pack(fill="both", expand=True, pady=(0, 6))
+        return gauge
 
     def _build_command_bar(self) -> None:
         bar = tk.Frame(self, bg=theme.PANEL, highlightbackground=theme.BORDER, highlightthickness=1)
         bar.pack(side="bottom", fill="x", padx=15, pady=(0, 14), ipady=7)
+        ScanStrip(bar, height=2).place(x=0, y=0, relwidth=1, height=2)
         tk.Label(bar, text="›_", bg=theme.PANEL, fg=theme.CYAN, font=(theme.MONO, 18, "bold")).pack(side="left", padx=(14, 7))
         self.prompt = tk.Entry(bar, bg=theme.PANEL, fg=theme.TEXT, insertbackground=theme.CYAN, relief="flat", font=(theme.FONT, 11))
         self.prompt.pack(side="left", fill="x", expand=True, ipady=8)
         self.prompt.insert(0, "JARVISga buyruq yoki savol yozing...")
         self.prompt.bind("<FocusIn>", self._clear_hint)
         self.prompt.bind("<Return>", lambda _event: self._send())
+        self.prompt.bind("<FocusIn>", lambda _: bar.configure(highlightbackground=theme.CYAN), add="+")
+        self.prompt.bind("<FocusOut>", lambda _: bar.configure(highlightbackground=theme.BORDER), add="+")
         GlowButton(bar, "YUBORISH  ›", self._send, padx=18, pady=7).pack(side="right", padx=10)
         self.mic_button = GlowButton(bar, "🎙 TINGLASH", self._toggle_mic, padx=12, pady=7)
         self.mic_button.pack(side="right")
+        self.fx_button = GlowButton(bar, "✦ FX", self._toggle_effects, padx=9, pady=7)
+        self.fx_button.pack(side="right", padx=(8, 3))
         self.prompt.focus_set()
+
+    def _toggle_effects(self):
+        clock = motion_clock(self)
+        clock.set_enabled(not clock.enabled)
+        self.fx_button.configure(text="✦ FX" if clock.enabled else "FX: OFF")
 
     def _clear_hint(self, _event: tk.Event[tk.Misc]) -> None:
         if self.prompt.get() == "JARVISga buyruq yoki savol yozing...":
@@ -280,9 +303,11 @@ class JarvisApp(tk.Tk):
                     if not intent.is_command and music_fallback and music_fallback.category == "media":
                         intent = music_fallback
                     if intent.is_command:
-                        agent_key = {"browser": "browser", "computer": "desktop", "media": "music", "voice": "voice"}.get(intent.category, "automation")
+                        if intent.command in OFFICE_ACTIONS:
+                            intent = self._validate_office_intent(message, intent)
+                        agent_key = "office" if intent.command in OFFICE_ACTIONS else {"browser": "browser", "computer": "desktop", "media": "music", "voice": "voice"}.get(intent.category, "automation")
                         assigned = self.connections.connection_for(agent_key)
-                        if assigned and self.active_connection and assigned.id != self.active_connection.id:
+                        if agent_key != "office" and assigned and self.active_connection and assigned.id != self.active_connection.id:
                             try:
                                 specialist = build_ai(assigned)
                                 candidate = specialist.interpret(message) if specialist else None
@@ -328,6 +353,40 @@ class JarvisApp(tk.Tk):
             self.voice.store.save(self.voice.settings)
         except Exception as error:
             self._add_feed(str(error), theme.RED)
+
+    @staticmethod
+    def _validate_office_intent(message: str, intent: AIIntent) -> AIIntent:
+        try:
+            data = validate_request(intent.command, json.loads(intent.target))
+            if data.get("source"):
+                normalize = lambda value: value.replace("\\", "/").casefold()
+                pattern = r"(?<![\w/:.\-])" + re.escape(normalize(data["source"])) + r"(?=$|[\s\"'”’»),;!?])"
+                if not re.search(pattern, normalize(message)):
+                    return AIIntent("answer", "Manba fayl yo'lini taxmin qilmayman. Office Studio bo'limida faylni tanlang yoki to'liq yo'lini yozing.")
+            if intent.command == "office_create":
+                # Keep every original requirement rather than trusting a lossy router summary.
+                data["prompt"] = message
+            return AIIntent("command", intent.reply, "office", intent.command, json.dumps(data, ensure_ascii=False))
+        except (TypeError, ValueError):
+            return AIIntent("answer", "Office topshirig'ini aniqlashtiring: hujjat turi va mavzusini yozing; konvertatsiya uchun Office Studio'da manba faylni tanlang.")
+
+    def _show_office_studio(self):
+        if self.office_window is not None and self.office_window.winfo_exists():
+            self.office_window.lift()
+            return
+        self.office_window = OfficeStudio(self, self.office, self._submit_office_task, self.tasks.get)
+
+    def _submit_office_task(self, action, data):
+        request = validate_request(action, data)
+        task = self.planner.plan_ai_command(action, json.dumps(request, ensure_ascii=False), "office")
+        self._refresh_tasks()
+        if task.requires_approval:
+            connection = self.connections.connection_for("office")
+            provider = connection.provider if connection else "ulanmagan AI"
+            self._add_feed(f"TASK #{task.id}: Manba matni {provider} ga yuborilishi uchun tasdiq kerak. BATAFSIL KO'RISH orqali manbani tekshiring.", theme.AMBER)
+        else:
+            self._approve_task(task.id)
+        return task
 
     def _voice_settings(self):
         VoiceDialog(self, self.voice, self._voice_saved)
@@ -524,6 +583,13 @@ class JarvisApp(tk.Tk):
 
     def _execute_task(self, task: Task) -> None:
         try:
+            if task.action in OFFICE_ACTIONS:
+                ai = build_ai(self.connections.connection_for("office")) if task.action == "office_create" else None
+                self.events.put(("agent_note", "Office Agent: " + ("AI mazmun yaratmoqda..." if task.action == "office_create" else "Fayl lokal konvertatsiya qilinmoqda...")))
+                result = self.office.run(task.action, json.loads(task.payload), ai=ai, allow_source_upload=task.requires_approval)
+                self.events.put(("office_artifact", result))
+                self.events.put(("task_done", (task, COMPLETED, result.summary)))
+                return
             action = "browser_open" if task.action == "open_url" else task.action
             result = execute_automation(action, task.payload) if action in BROWSER_ACTIONS | DESKTOP_ACTIONS | {"workflow"} else execute(task)
             self.events.put(("task_done", (task, COMPLETED, result)))
@@ -556,6 +622,8 @@ class JarvisApp(tk.Tk):
                     self._idle_later(3300)
                 elif kind == "agent_note":
                     self._add_feed(str(message), theme.CYAN)
+                elif kind == "office_artifact":
+                    self._add_feed("OFFICE: " + message.path.name + " tayyor. Office Studio → TAYYOR FAYLLAR orqali oching.", theme.GREEN)
                 elif kind == "intent":
                     intent = message
                     self.agent_panel.set_working("core", False)
@@ -563,7 +631,15 @@ class JarvisApp(tk.Tk):
                     if intent.command != "speak":
                         self._speak_reply(intent.reply)
                     if intent.is_command:
-                        if intent.command == "workflow":
+                        if intent.command in OFFICE_ACTIONS:
+                            try:
+                                task = self.planner.plan_ai_command(intent.command, intent.target, "office")
+                            except ValueError as error:
+                                self._add_feed(str(error), theme.RED)
+                                self.voice.resume_listening()
+                                self.reactor.set_state("idle", "OFFICE TOPSHIRIG'INI ANIQLASHTIRING")
+                                continue
+                        elif intent.command == "workflow":
                             task = self.tasks.create(f"Workflow: {intent.reply}", "automation", "workflow", intent.target)
                         elif intent.command in BROWSER_ACTIONS or intent.command in DESKTOP_ACTIONS:
                             agent_key = "browser" if intent.command in BROWSER_ACTIONS else "desktop"
@@ -616,7 +692,7 @@ class JarvisApp(tk.Tk):
                     self.agent_panel.set_working(updated.agent_key, False)
                     self._refresh_tasks()
                     self._add_feed(f"TASK #{updated.id} {status.lower()}: {result}", theme.GREEN if status == COMPLETED else theme.RED)
-                    self.reactor.set_state("speaking", "AMAL YAKUNLANDI")
+                    self.reactor.set_state("speaking" if status == COMPLETED else "idle", "AMAL YAKUNLANDI" if status == COMPLETED else "TASK XATOLIK BILAN TUGADI")
                     self._idle_later(2500)
         except queue.Empty:
             pass
@@ -624,11 +700,27 @@ class JarvisApp(tk.Tk):
 
     def _add_feed(self, message: str, color: str) -> None:
         timestamp = datetime.now().strftime("%H:%M")
+        if not hasattr(self, "_feed_flashes"):
+            self._feed_flashes = {}
+            self._feed_serial = 0
+            motion_clock(self).subscribe(self.feed, self._animate_feed)
+        self._feed_serial += 1
+        flash = f"arrival_{self._feed_serial}"
+        self._feed_flashes[flash] = motion_clock(self).elapsed
         self.feed.configure(state="normal")
-        self.feed.insert("end", f"[{timestamp}] {message}\n\n", (color,))
+        self.feed.insert("end", f"[{timestamp}] {message}\n\n", (color, flash))
         self.feed.tag_configure(color, foreground=color)
         self.feed.see("end")
         self.feed.configure(state="disabled")
+
+    def _animate_feed(self, elapsed, delta, enabled):
+        for tag, started in tuple(self._feed_flashes.items()):
+            age = elapsed-started
+            if not enabled or age >= .85:
+                self.feed.tag_delete(tag)
+                del self._feed_flashes[tag]
+            else:
+                self.feed.tag_configure(tag, background=blend("#123f4c", theme.PANEL, age/.85))
 
     def _idle_later(self, delay: int) -> None:
         revision = self.reactor.revision
@@ -644,9 +736,9 @@ class JarvisApp(tk.Tk):
         now = datetime.now()
         self.clock.configure(text=now.strftime("%A, %d %B  •  %H:%M:%S"))
         metrics = system_metrics()
-        self.cpu_value.configure(text="ACTIVE")
-        self.ram_value.configure(text=f"{metrics.memory_percent}%")
-        self.disk_value.configure(text=f"{metrics.disk_percent}%")
+        self.cpu_value.set_value("ACTIVE")
+        self.ram_value.set_value(f"{metrics.memory_percent}%")
+        self.disk_value.set_value(f"{metrics.disk_percent}%")
         self.after(1000, self._tick)
 
     def _close(self) -> None:

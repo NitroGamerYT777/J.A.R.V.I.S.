@@ -33,11 +33,24 @@ qurilmaning xavfli sozlamalarini o'zgartirish kabi ishlar tasdiqlanishi va alohi
 
 ROUTER_INSTRUCTION = """Sen JARVIS buyruq tahlilchisisan. Faqat valid JSON qaytar.
 Savol yoki suhbat: {"type":"answer","category":"question","reply":"o'zbekcha javob"}.
-Kompyuter amali: {"type":"command","category":"browser|computer|media|voice","command":"amal","target":"qiymat yoki JSON obyekt","reply":"qisqa tasdiq"}.
+Kompyuter amali: {"type":"command","category":"browser|computer|media|voice|office","command":"amal","target":"qiymat yoki JSON obyekt","reply":"qisqa tasdiq"}.
 Aniq bajarish so'rovi bo'lmasa kompyuter buyrug'ini yaratma. Oddiy amallar avtomatik
 bajariladi; yuborish, o'chirish, xarid, xavfli yoki ta'siri noma'lum amallar uchun dastur
 tasdiq so'raydi. Tasdiq kerakligini o'zing belgilama va amal bajarildi deb oldindan aytma.
 Shell/Python kodini command sifatida qaytarma.
+
+Word/Excel/PowerPoint HUJJAT tayyorlash so'rovi bo'lsa desktop_launch yoki dastur ochish emas,
+category="office", command="office_create" tanla. target={"format":"docx|xlsx|pptx",
+"prompt":"foydalanuvchining TO'LIQ talabi, mavzu, ma'lumotlar, til, slaydlar soni",
+"filename":"papka yo'lisiz ixtiyoriy nom"}. Masalan: "AI haqida 8 slaydli taqdimot tayyorla"
+-> office_create format=pptx; "oylik budjet Excel jadvali yarat" -> xlsx; "ariza yoz" -> docx.
+Hujjat matnini bu router javobida yaratma: Office Agent alohida to'liq mazmun yaratadi.
+Manbali qayta ishlashda source faqat foydalanuvchi AYNAN bergan to'liq lokal fayl yo'li
+bo'lishi mumkin. Yo'lni taxmin qilma; yo'l yo'q bo'lsa Office bo'limida fayl tanlashni so'ra.
+office_convert: {"source":"foydalanuvchi bergan to'liq fayl yo'li","target_format":"pdf|txt|csv|xlsx|docx",
+"sheet":"XLSX->CSV uchun ixtiyoriy varaq nomi"}. DOCX/XLSX/PPTX->PDF, CSV<->XLSX,
+TXT<->DOCX, DOCX/PPTX/PDF->TXT qo'llanadi; PDF->Word/Excel yoki OCR hozir yo'q.
+Konvertatsiya uchun fayl mazmunini AI'ga yuborma. Natijalar lokal Office kutubxonasiga saqlanadi.
 
 Brauzer (Selenium) amallari:
 - browser_open: target URL yoki {"url":"https://example.com"}
@@ -103,6 +116,9 @@ class GeminiAI:
     def ask(self, message: str) -> str:
         return self.interpret(message).reply
 
+    def complete_json(self, instruction: str, message: str, *, max_tokens: int = 8000) -> dict:
+        return _complete_json(self, instruction, message, max_tokens)
+
     def interpret(self, message: str) -> AIIntent:
         contents = [*self.history, {"role": "user", "parts": [{"text": message}]}]
         payload = {
@@ -162,6 +178,9 @@ class OpenAICompatibleAI:
     def ask(self, message: str) -> str:
         return self.interpret(message).reply
 
+    def complete_json(self, instruction: str, message: str, *, max_tokens: int = 8000) -> dict:
+        return _complete_json(self, instruction, message, max_tokens)
+
     def interpret(self, message: str) -> AIIntent:
         payload = {
             "model": self.model,
@@ -196,6 +215,51 @@ class OpenAICompatibleAI:
         if kind == "command" and command not in ALLOWED_COMMANDS:
             return AIIntent(kind="answer", reply="Bu amal JARVIS uchun hali ruxsat etilmagan.")
         return AIIntent(kind=kind, reply=reply, category=category, command=command, target=target)
+
+
+def _complete_json(ai, instruction: str, message: str, max_tokens: int) -> dict:
+    """Independent structured generation, never an interpreted command or chat history."""
+    if isinstance(ai, GeminiAI):
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{ai.model}:generateContent?" + urlencode({"key": ai.api_key})
+        payload = {"systemInstruction": {"parts": [{"text": instruction}]},
+                   "contents": [{"role": "user", "parts": [{"text": message}]}],
+                   "generationConfig": {"temperature": .25, "maxOutputTokens": max_tokens, "responseMimeType": "application/json"}}
+        headers = {"Content-Type": "application/json"}
+        provider = "Gemini"
+    else:
+        url = ai.base_url.rstrip("/") + "/chat/completions"
+        payload = {"model": ai.model, "messages": [{"role": "system", "content": instruction}, {"role": "user", "content": message}],
+                   "temperature": .25, "max_tokens": max_tokens, "response_format": {"type": "json_object"}}
+        headers = {"Content-Type": "application/json", "Authorization": f"Bearer {ai.api_key}"}
+        provider = ai.provider_name
+    request = Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
+    try:
+        with urlopen(request, timeout=100) as response:
+            raw = response.read(2*1024*1024+1)
+        if len(raw) > 2*1024*1024:
+            raise AIError("AI hujjat javobi juda katta.")
+        data = json.loads(raw)
+        if isinstance(ai, GeminiAI):
+            candidate = data["candidates"][0]
+            if candidate.get("finishReason") not in {None, "STOP"}:
+                raise AIError("AI hujjatni to'liq tugatmadi. So'rov hajmini kamaytirib qayta urinib ko'ring.")
+            text = "".join(part.get("text", "") for part in candidate["content"]["parts"])
+        else:
+            choice = data["choices"][0]
+            if choice.get("finish_reason") not in {None, "stop"}:
+                raise AIError("AI hujjat javobi tugallanmagan. Qisqaroq topshiriq bering.")
+            text = choice["message"]["content"]
+        result = json.loads(text)
+        if not isinstance(result, dict):
+            raise ValueError("object expected")
+        return result
+    except HTTPError as error:
+        # Never include source excerpts or secret request URLs in the error feed.
+        raise AIError(f"{provider} Office API xatosi ({error.code}). Model/kalit, kvota va JSON rejimini tekshiring.") from error
+    except (URLError, TimeoutError) as error:
+        raise AIError(f"{provider} hujjat so'roviga javob bermadi. Internetni tekshirib qayta urinib ko'ring.") from error
+    except (KeyError, IndexError, TypeError, ValueError, AttributeError) as error:
+        raise AIError(f"{provider} to'liq hujjat JSON obyektini qaytarmadi. Qayta urinib ko'ring.") from error
 
 
 def ai_from_environment() -> GeminiAI | OpenAICompatibleAI | None:

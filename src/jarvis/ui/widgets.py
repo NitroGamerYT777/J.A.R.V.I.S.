@@ -7,6 +7,7 @@ from tkinter import messagebox
 from collections.abc import Callable
 
 from jarvis.ui import theme
+from jarvis.ui.effects import HoverEffect, ScanStrip, blend, approach, motion_clock
 from jarvis.agents import AGENTS
 from jarvis.tasks import COMPLETED, FAILED, PENDING_APPROVAL, PLANNED, REJECTED, RUNNING, Task
 
@@ -14,6 +15,11 @@ from jarvis.tasks import COMPLETED, FAILED, PENDING_APPROVAL, PLANNED, REJECTED,
 class Panel(tk.Frame):
     def __init__(self, parent: tk.Misc, title: str, *, accent: str = theme.CYAN, **kwargs: object) -> None:
         super().__init__(parent, bg=theme.PANEL, highlightbackground=theme.BORDER, highlightthickness=1, **kwargs)
+        self.accent = accent
+        self._glow = 0.
+        self._hovered = False
+        self.bind("<Enter>", lambda _: setattr(self, "_hovered", True), add="+")
+        self.bind("<Leave>", lambda _: setattr(self, "_hovered", False), add="+")
         header = tk.Frame(self, bg=theme.PANEL)
         header.pack(fill="x", padx=12, pady=(9, 4))
         tk.Frame(header, bg=accent, width=3, height=14).pack(side="left", padx=(0, 7))
@@ -21,8 +27,20 @@ class Panel(tk.Frame):
             header, text=title.upper(), bg=theme.PANEL, fg=theme.CYAN_SOFT,
             font=(theme.MONO, 9, "bold"),
         ).pack(side="left")
+        self.indicator = tk.Label(header, text="◆", bg=theme.PANEL, fg=accent, font=(theme.MONO, 7))
+        self.indicator.pack(side="right")
+        self.scan = ScanStrip(self, accent=accent, height=2)
+        self.scan.pack(fill="x", padx=12)
         self.body = tk.Frame(self, bg=theme.PANEL)
         self.body.pack(fill="both", expand=True, padx=12, pady=(3, 11))
+        motion_clock(self).subscribe(self, self._animate_chrome)
+
+    def _animate_chrome(self, elapsed, delta, enabled):
+        target = 1. if self._hovered else 0.
+        self._glow = approach(self._glow, target, delta) if enabled else target
+        self.configure(highlightbackground=blend(theme.BORDER, self.accent, self._glow*.65))
+        brightness = .55+.3*math.sin(elapsed*1.8) if enabled else .7
+        self.indicator.configure(fg=blend(theme.BORDER, self.accent, brightness))
 
 
 class Reactor(tk.Canvas):
@@ -34,17 +52,18 @@ class Reactor(tk.Canvas):
         self.mode = "idle"
         self.message = "TIZIM TAYYOR"
         self.bind("<Configure>", lambda _event: self._draw())
-        self.after(30, self._animate)
+        motion_clock(self).subscribe(self, self._animate)
 
     def set_state(self, mode: str, message: str) -> None:
         self.mode = mode
         self.message = message.upper()
         self._draw()
 
-    def _animate(self) -> None:
-        self.phase += 0.09 if self.mode == "thinking" else 0.035
+    def _animate(self, elapsed, delta, enabled) -> None:
+        if not enabled:
+            return
+        self.phase += delta*(3 if self.mode == "thinking" else 1.17)
         self._draw()
-        self.after(30, self._animate)
 
     def _draw(self) -> None:
         self.delete("all")
@@ -108,6 +127,7 @@ class GlowButton(tk.Button):
             activebackground=theme.BLUE, activeforeground="white", relief="flat",
             highlightbackground=theme.BORDER, highlightthickness=1, font=font, cursor="hand2", **kwargs,
         )
+        self.hover_effect = HoverEffect(self, foreground=theme.CYAN_SOFT)
 
 
 class AgentPanel(Panel):
@@ -129,9 +149,12 @@ class AgentPanel(Panel):
             label = tk.Label(info, text="ULANGAN" if agent.connected else "ULANMAGAN", bg=theme.PANEL_ALT, fg=agent.color if agent.connected else theme.MUTED, font=(theme.MONO, 7))
             label.pack(anchor="w")
             self.rows[agent.key] = label
+            hover = HoverEffect(row, accent=agent.color)
             for widget in (row, info, *row.winfo_children(), *info.winfo_children()):
                 widget.bind("<Button-1>", lambda _event, key=agent.key: self.on_select(key))
                 widget.configure(cursor="hand2")
+                widget.bind("<Enter>", lambda _, effect=hover: effect._change("hovered", True), add="+")
+                widget.bind("<Leave>", lambda _, effect=hover: effect._change("hovered", False), add="+")
 
     def set_working(self, agent_key: str, working: bool) -> None:
         for key, label in self.rows.items():
