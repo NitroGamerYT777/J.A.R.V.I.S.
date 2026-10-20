@@ -12,7 +12,7 @@ from jarvis.office.service import OfficeService
 
 
 class OfficeStudio(tk.Toplevel):
-    FORMATS = {"Word • DOCX": "docx", "Excel • XLSX": "xlsx", "PowerPoint • PPTX": "pptx"}
+    FORMATS = {"Word • DOCX": "docx", "Excel • XLSX": "xlsx", "PowerPoint • PPTX": "pptx", 'Matn • TXT': 'txt'}
 
     def __init__(self, parent, service: OfficeService, submit, lookup_task=None):
         super().__init__(parent)

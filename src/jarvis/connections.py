@@ -6,7 +6,7 @@ import uuid
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
-from jarvis.llm import GeminiAI, OpenAICompatibleAI
+from jarvis.llm import AIError, GeminiAI, OpenAICompatibleAI
 
 
 PROVIDER_DEFAULTS = {
@@ -24,7 +24,7 @@ class Connection:
     model: str
     api_key: str
     label: str
-    status: str = "ready"
+    status: str = "untested"
     last_error: str = ""
 
 
@@ -67,6 +67,14 @@ class ConnectionStore:
         if provider not in PROVIDER_DEFAULTS:
             raise ValueError("Noma'lum AI provayderi.")
         name, default_model = PROVIDER_DEFAULTS[provider]
+        if not api_key.strip():
+            raise ValueError('API kaliti bo‘sh bo‘lmasin.')
+        existing = next((item for item in self.connections if item.provider == provider and item.model == (model or default_model) and item.api_key == api_key.strip()), None)
+        if existing:
+            if make_default or provider == 'gemini':
+                self.default_id = existing.id
+            self.save()
+            return existing  # Re-adding the same key cannot reset a quota/error state.
         connection = Connection(uuid.uuid4().hex, provider, model or default_model, api_key.strip(), label.strip() or f"{name} • {model or default_model}")
         self.connections.append(connection)
         # Gemini is preferred as the initial chat/triage model.
@@ -104,11 +112,20 @@ class ConnectionStore:
     def connection_for(self, agent_key: str) -> Connection | None:
         return self.get(self.assignments.get(agent_key, "")) or self.default_connection()
 
-    def mark_error(self, connection_id: str, error: str) -> None:
+    def mark_error(self, connection_id: str, error) -> None:
         connection = self.get(connection_id)
         if connection:
-            connection.status = "invalid" if "(401)" in error or "(403)" in error else "error"
-            connection.last_error = error
+            kind = getattr(error, 'kind', '')
+            connection.status = {'auth': 'invalid', 'permission': 'permission_denied', 'quota': 'quota',
+                'rate_limit': 'rate_limited', 'unavailable': 'unavailable', 'model': 'model_error'}.get(kind,
+                'invalid' if '(401)' in str(error) else 'permission_denied' if '(403)' in str(error) else 'error')
+            connection.last_error = str(error)
+            self.save()
+
+    def mark_ready(self, connection_id):
+        connection = self.get(connection_id)
+        if connection and (connection.status != 'ready' or connection.last_error):
+            connection.status, connection.last_error = 'ready', ''
             self.save()
 
 

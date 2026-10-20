@@ -41,6 +41,12 @@ def _json_object(text: str) -> dict:
 class AIError(RuntimeError):
     """A user-safe error raised when the remote AI service cannot answer."""
 
+    def __init__(self, message, *, status_code=None, kind='error', retry_after=None):
+        super().__init__(message)
+        self.status_code = status_code
+        self.kind = kind
+        self.retry_after = retry_after
+
 
 class AIProvider(Protocol):
     def ask(self, message: str) -> str: ...
@@ -60,11 +66,13 @@ tasdiq so'raydi. Tasdiq kerakligini o'zing belgilama va amal bajarildi deb oldin
 Shell/Python kodini command sifatida qaytarma.
 
 Word/Excel/PowerPoint HUJJAT tayyorlash so'rovi bo'lsa desktop_launch yoki dastur ochish emas,
-category="office", command="office_create" tanla. target={"format":"docx|xlsx|pptx",
+category="office", command="office_create" tanla. target={"format":"docx|xlsx|pptx|txt",
 "prompt":"foydalanuvchining TO'LIQ talabi, mavzu, ma'lumotlar, til, slaydlar soni",
 "filename":"papka yo'lisiz ixtiyoriy nom"}. Masalan: "AI haqida 8 slaydli taqdimot tayyorla"
 -> office_create format=pptx; "oylik budjet Excel jadvali yarat" -> xlsx; "ariza yoz" -> docx.
 Hujjat matnini bu router javobida yaratma: Office Agent alohida to'liq mazmun yaratadi.
+She'r/hikoya/matnni .txt fayl qilib saqlash ham office_create format=txt.
+Desktop so'ralganda save_to="desktop"; kompyuterning foydalanuvchi nomi/yo'lini taxmin qilma.
 Manbali qayta ishlashda source faqat foydalanuvchi AYNAN bergan to'liq lokal fayl yo'li
 bo'lishi mumkin. Yo'lni taxmin qilma; yo'l yo'q bo'lsa Office bo'limida fayl tanlashni so'ra.
 office_convert: {"source":"foydalanuvchi bergan to'liq fayl yo'li","target_format":"pdf|txt|csv|xlsx|docx",
@@ -161,7 +169,7 @@ class GeminiAI:
     def complete_json(self, instruction: str, message: str, *, max_tokens: int = 8000, progress: Callable[[str], None] | None = None) -> dict:
         return _complete_json(self, instruction, message, max_tokens, progress)
 
-    def interpret(self, message: str) -> AIIntent:
+    def interpret(self, message: str, *, progress=None) -> AIIntent:
         contents = [*self.history, {"role": "user", "parts": [{"text": message}]}]
         payload = {
             "systemInstruction": {"parts": [{"text": SYSTEM_INSTRUCTION + "\n\n" + ROUTER_INSTRUCTION}]},
@@ -179,13 +187,10 @@ class GeminiAI:
             method="POST",
         )
         try:
-            with urlopen(request, timeout=30) as response:
-                data = json.loads(response.read().decode("utf-8"))
-        except HTTPError as error:
-            detail = error.read().decode("utf-8", errors="replace")
-            raise AIError(f"Gemini API xatosi ({error.code}): {detail[:300]}") from error
-        except URLError as error:
-            raise AIError("Gemini API'ga ulanib bo'lmadi. Internetni tekshiring.") from error
+            raw = _office_response(request, 'Gemini', progress, timeout=30, context='')
+            data = json.loads(raw)
+        except (ValueError, UnicodeError) as error:
+            raise AIError('Gemini noto‘g‘ri JSON javob qaytardi.') from error
 
         try:
             candidate = data["candidates"][0]
@@ -226,7 +231,7 @@ class OpenAICompatibleAI:
     def complete_json(self, instruction: str, message: str, *, max_tokens: int = 8000, progress: Callable[[str], None] | None = None) -> dict:
         return _complete_json(self, instruction, message, max_tokens, progress)
 
-    def interpret(self, message: str) -> AIIntent:
+    def interpret(self, message: str, *, progress=None) -> AIIntent:
         payload = {
             "model": self.model,
             "messages": [
@@ -243,14 +248,9 @@ class OpenAICompatibleAI:
             method="POST",
         )
         try:
-            with urlopen(request, timeout=30) as response:
-                data = json.loads(response.read().decode("utf-8"))
+            data = json.loads(_office_response(request, self.provider_name, progress, timeout=30, context=''))
             text = data["choices"][0]["message"]["content"].strip()
             parsed = _json_object(text)
-        except HTTPError as error:
-            raise AIError(f"{self.provider_name} API xatosi ({error.code}): {error.read().decode('utf-8', errors='replace')[:250]}") from error
-        except URLError as error:
-            raise AIError(f"{self.provider_name} API'ga ulanib bo'lmadi. Internetni tekshiring.") from error
         except (KeyError, IndexError, TypeError, ValueError, AttributeError) as error:
             raise AIError(f"{self.provider_name} kutilgan JSON javobini qaytarmadi.") from error
         kind = str(parsed.get("type", "answer"))
@@ -267,9 +267,7 @@ OFFICE_ATTEMPTS = 4
 TRANSIENT_HTTP = frozenset({408, 429, 500, 502, 503, 504})
 
 
-def _office_retry_delay(error, attempt: int) -> float | None:
-    """Respect Retry-After; defer to the user instead of ignoring a long cooldown."""
-    delay = 2. ** attempt
+def _retry_header_seconds(error):
     hint = error.headers.get("Retry-After") if getattr(error, "headers", None) else None
     if hint:
         try:
@@ -279,19 +277,64 @@ def _office_retry_delay(error, attempt: int) -> float | None:
                 date = parsedate_to_datetime(hint)
                 seconds = (date.replace(tzinfo=date.tzinfo or timezone.utc)-datetime.now(timezone.utc)).total_seconds()
             if math.isfinite(seconds):
-                delay = max(delay, seconds)
+                return max(0, seconds)
         except (ValueError, TypeError, OverflowError):
             pass
+    return None
+
+
+def _office_retry_delay(error, attempt: int) -> float | None:
+    """Respect Retry-After; defer to the user instead of ignoring a long cooldown."""
+    delay = max(2. ** attempt, _retry_header_seconds(error) or 0)
     return delay if delay <= 30 else None
 
 
-def _office_http_error(provider: str, code: int, attempts: int) -> AIError:
-    prefix = f"{provider} Office API xatosi ({code}). "
+def _http_details(error):
+    """Read only typed error metadata. Never return raw body text or key-bearing URLs."""
+    kind = {401: 'auth', 403: 'permission', 404: 'model', 429: 'rate_limit'}.get(error.code, 'unavailable' if error.code in TRANSIENT_HTTP else 'request')
+    retry_after = _retry_header_seconds(error)
+    try:
+        body = json.loads(error.read(65536))
+        data = body.get('error', {})
+        if not isinstance(data, dict):
+            return kind, retry_after
+        if data.get('code') in {'insufficient_quota', 'billing_hard_limit_reached'} or data.get('type') == 'insufficient_quota':
+            kind = 'quota'
+        details = data.get('details', [])
+        for detail in details if isinstance(details, list) else []:
+            if not isinstance(detail, dict):
+                continue
+            if detail.get('reason') in {'API_KEY_INVALID', 'API_KEY_EXPIRED'}:
+                kind = 'auth'
+            duration = detail.get('retryDelay')
+            if isinstance(duration, str) and re.fullmatch(r'\d+(?:\.\d+)?s', duration):
+                seconds = float(duration[:-1])
+                if math.isfinite(seconds):
+                    retry_after = max(retry_after or 0, seconds)
+            violations = detail.get('violations', [])
+            for violation in violations if isinstance(violations, list) else []:
+                if not isinstance(violation, dict):
+                    continue
+                quota_id = str(violation.get('quotaId', '')).casefold()
+                if 'perday' in quota_id or 'per_day' in quota_id or str(violation.get('quotaValue')) == '0':
+                    kind = 'quota'
+    except (ValueError, TypeError, AttributeError, OSError):
+        pass
+    return kind, retry_after
+
+
+def _office_http_error(provider: str, code: int, attempts: int, *, kind=None, retry_after=None, context='Office') -> AIError:
+    prefix = f"{provider} {context+' ' if context else ''}API xatosi ({code}). "
     if code in {408, 500, 502, 503, 504}:
         detail = (f"AI xizmati vaqtinchalik band yoki javob bera olmayapti. {attempts} ta urinish bajarildi. "
                   "Birozdan keyin QAYTA URINISHni bosing. Bu xato kalit noto'g'ri degani emas.")
     elif code == 429:
-        detail = "So'rovlar limiti yoki kvota cheklovi. Keyinroq qayta urining; davom etsa provayder kvotasini tekshiring."
+        detail = ("Kunlik/mavjud kvota tugagan yoki hisobda kvota ajratilmagan. Avtomatik takrorlanmadi. " if kind == 'quota'
+                  else "So'rovlar tezligi yoki kvota cheklangan. ")
+        if retry_after is not None:
+            detail += f"Server kamida {retry_after:g} soniya kutishni so'radi. "
+        detail += ("AI Studio'da loyiha/model kvotasi va hisob sozlamalarini tekshiring yoki boshqa ulangan provayderni o'zingiz tanlang. "
+                   "Bir loyihadagi yangi Gemini kaliti yangi kvota bermasligi mumkin. Kalit avtomatik o'chirilmaydi.")
     elif code in {401, 403}:
         detail = "API kaliti yoki modelga kirish ruxsatini Agentlar bo'limida tekshiring."
     elif code == 404:
@@ -300,20 +343,31 @@ def _office_http_error(provider: str, code: int, attempts: int) -> AIError:
         detail = "Model bu so'rov yoki JSON rejimini qabul qilmadi. Model imkoniyatlarini tekshiring."
     else:
         detail = "Provayder so'rovni qabul qilmadi. Hisob/model sozlamalarini tekshiring."
-    return AIError(prefix + detail)
+    if kind == 'auth' and code == 400:
+        detail = 'Provayder API kalitini yaroqsiz yoki muddati tugagan deb belgiladi. Agentlar bo‘limida tekshiring.'
+    return AIError(prefix + detail, status_code=code, kind=kind or 'error', retry_after=retry_after)
 
 
-def _office_response(request: Request, provider: str, progress=None) -> bytes:
+def _office_response(request: Request, provider: str, progress=None, *, timeout=100, context='Office') -> bytes:
     for attempt in range(1, OFFICE_ATTEMPTS+1):
         try:
-            with urlopen(request, timeout=100) as response:
-                return response.read(2*1024*1024+1)
+            with urlopen(request, timeout=timeout) as response:
+                raw = response.read(2*1024*1024+1)
+                if len(raw) > 2*1024*1024:
+                    raise AIError('AI javobi juda katta.')
+                return raw
         except HTTPError as error:
             code = error.code
             delay = _office_retry_delay(error, attempt)
+            kind, retry_after = _http_details(error)
+            if retry_after is not None:
+                if delay is not None:
+                    delay = max(delay, retry_after)
+                    if delay > 30:
+                        delay = None
             error.close()  # Never echo error bodies, source text, or key-bearing URLs.
-            if code not in TRANSIENT_HTTP or attempt == OFFICE_ATTEMPTS or delay is None:
-                raise _office_http_error(provider, code, attempt) from error
+            if kind in {'quota', 'auth'} or code not in TRANSIENT_HTTP or attempt == OFFICE_ATTEMPTS or delay is None:
+                raise _office_http_error(provider, code, attempt, kind=kind, retry_after=retry_after, context=context) from None
             note = f"{provider} HTTP {code}: xizmat vaqtincha javob bermadi. {delay:g} soniyadan keyin {attempt+1}/{OFFICE_ATTEMPTS}-urinish..."
         except (URLError, TimeoutError, ConnectionError) as error:
             if attempt == OFFICE_ATTEMPTS:
@@ -348,12 +402,18 @@ def _complete_json(ai, instruction: str, message: str, max_tokens: int, progress
             raise AIError("AI hujjat javobi juda katta.")
         data = json.loads(raw)
         if isinstance(ai, GeminiAI):
+            if isinstance(data.get('promptFeedback'), dict) and data['promptFeedback'].get('blockReason'):
+                raise AIError('Gemini mazmun so‘rovini o‘z filtri bilan to‘xtatdi. Fayl yaratilmadi.', kind='refusal')
             candidate = data["candidates"][0]
+            if candidate.get('finishReason') in {'SAFETY', 'PROHIBITED_CONTENT', 'BLOCKLIST', 'SPII'}:
+                raise AIError('Gemini mazmun so‘rovini o‘z filtri bilan to‘xtatdi. Fayl yaratilmadi.', kind='refusal')
             if candidate.get("finishReason") not in {None, "STOP"}:
                 raise AIError("AI hujjatni to'liq tugatmadi. So'rov hajmini kamaytirib qayta urinib ko'ring.")
             text = "".join(part.get("text", "") for part in candidate["content"]["parts"] if not part.get("thought"))
         else:
             choice = data["choices"][0]
+            if choice['message'].get('refusal') or choice.get('finish_reason') == 'content_filter':
+                raise AIError(f'{provider} mazmun yaratishni rad etdi. Fayl yaratilmadi.', kind='refusal')
             if choice.get("finish_reason") not in {None, "stop"}:
                 raise AIError("AI hujjat javobi tugallanmagan. Qisqaroq topshiriq bering.")
             text = choice["message"]["content"]

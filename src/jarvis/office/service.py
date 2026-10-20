@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from jarvis.office.destinations import desktop_directory, wants_desktop
 
-FORMATS = frozenset({"docx", "xlsx", "pptx"})
+FORMATS = frozenset({"docx", "xlsx", "pptx", "txt"})
 SOURCE_FORMATS = frozenset({".docx", ".xlsx", ".pptx", ".csv", ".txt", ".pdf"})
 MAX_SOURCE_BYTES = 20 * 1024 * 1024
 
@@ -38,6 +38,10 @@ short bullets, title <=85 chars, body <=400 chars, each bullet <=150 chars. Tabl
 Do not fill a slide with repeated headings or empty slogans. Use notes for extra explanation.
 WORD default 3-6 substantial sections. EXCEL is a usable spreadsheet with formulas when requested.
 Only use the schema matching the requested FORMAT. Do not add a format/filename/path field.
+TXT schema: {"title":"short document title","text":"complete requested text with original line breaks"}.
+For poems preserve stanza and line breaks, do not turn a poem into generic prose or a template.
+The text contains the finished content, not promises, placeholders or claims of saving a file.
+If you cannot fulfill the request, return {"refusal":"short honest reason"} instead of a fake document.
 """
 
 
@@ -61,7 +65,7 @@ def validate_request(action: str, data: dict) -> dict:
         raise ValueError("Saqlash manzili faqat library yoki desktop bo'lishi mumkin.")
     if action == "office_create":
         if result.get("format") not in FORMATS:
-            raise ValueError("Yaratish formati docx, xlsx yoki pptx bo'lishi kerak.")
+            raise ValueError("Yaratish formati docx, xlsx, pptx yoki txt bo'lishi kerak.")
         if not 3 <= len(result.get("prompt", "")) <= 12000:
             raise ValueError("Hujjat topshirig'i 3–12000 belgidan iborat bo'lsin.")
         filename = result.get("filename", "")
@@ -218,6 +222,9 @@ class OfficeService:
                 if progress is not None:
                     options["progress"] = progress
                 spec = ai.complete_json(SPEC_INSTRUCTION, prompt+correction, **options)
+                if isinstance(spec, dict) and isinstance(spec.get('refusal'), str) and spec['refusal'].strip():
+                    from jarvis.llm import AIError
+                    raise AIError('AI mazmun yaratishni rad etdi: '+spec['refusal'][:500], kind='refusal')
                 try:
                     validate_document(spec, "." + request["format"])
                     if request["format"] == "pptx":

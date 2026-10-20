@@ -10,9 +10,10 @@ import uuid
 
 def wants_desktop(message: str) -> bool:
     text = message.casefold()
+    text = text.replace('‘', "'").replace('’', "'").replace('ʻ', "'")
     # A phrase inside a source filename is not permission to copy to Desktop.
     text = re.sub(r'''(?:[a-z]:[\\/]|/)[^\r\n<>"|?*]+?\.(?:docx|xlsx|pptx|pdf|csv|txt)(?=$|[\s"'”’»),;!?])''', " ", text)
-    return bool(re.search(r"\b(?:desktop(?:da|ga)?|ish stol(?:ida|iga|i)?)\s+(?:ham\s+)?saqla(?:b|ng)?\b", text)
+    return bool(re.search(r"\b(?:desktop(?:da|ga)?|ish stol(?:ida|iga|i)?)\s+(?:ham\s+)?(?:\.?(?:txt|docx|xlsx|pptx|pdf|csv)\s+(?:qilib|formatida|ko'rinishida)\s+)?saqla(?:b|ng)?\b", text)
                 or re.search(r"\bsave\s+(?:to\s+)?(?:the\s+)?desktop\b", text))
 
 

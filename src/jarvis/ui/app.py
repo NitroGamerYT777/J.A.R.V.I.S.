@@ -18,7 +18,7 @@ from jarvis.automation import BROWSER_ACTIONS, DESKTOP_ACTIONS, browser, execute
 from jarvis.config import load_local_env
 from jarvis.connections import ConnectionStore, build_ai
 from jarvis.intent import AIIntent
-from jarvis.llm import AIError
+from jarvis.llm import AIError, GeminiAI, OpenAICompatibleAI
 from jarvis.memory import Memory
 from jarvis.tasks import COMPLETED, FAILED, PENDING_APPROVAL, PLANNED, REJECTED, RUNNING, Task, TaskPlanner, TaskStore, execute
 from jarvis.voice import get_voice
@@ -30,7 +30,7 @@ from jarvis.ui.reactor3d import Reactor3D
 from jarvis.ui.effects import HoverEffect, MetricGauge, ScanStrip, blend, motion_clock
 from jarvis.office import OFFICE_ACTIONS
 from jarvis.office.service import OfficeService, validate_request
-from jarvis.office.commands import local_conversion_intent
+from jarvis.office.commands import local_conversion_intent, local_text_creation_intent
 from jarvis.office.destinations import wants_desktop
 from jarvis.ui.office_studio import OfficeStudio
 from jarvis.computer.service import ComputerService
@@ -75,7 +75,7 @@ class AIProviderConnectionDialog(tk.Toplevel):
         tk.Label(frame, text="API KEY", bg=theme.PANEL, fg=theme.CYAN, font=(theme.MONO, 8, "bold")).pack(anchor="w", pady=(15, 4))
         self.key = tk.Entry(frame, show="•", bg=theme.PANEL_ALT, fg=theme.TEXT, insertbackground=theme.CYAN, relief="flat", font=(theme.MONO, 10), width=45)
         self.key.pack(fill="x", ipady=7)
-        self.message = tk.Label(frame, text="Kalit faqat lokal .env faylingizda saqlanadi.", bg=theme.PANEL, fg=theme.MUTED, font=(theme.FONT, 8))
+        self.message = tk.Label(frame, text="Kalit lokal data/connections.json da saqlanadi; bu hali ulanish testi emas.", bg=theme.PANEL, fg=theme.MUTED, font=(theme.FONT, 8))
         self.message.pack(anchor="w", pady=(5, 13))
         controls = tk.Frame(frame, bg=theme.PANEL)
         controls.pack(fill="x")
@@ -156,10 +156,10 @@ class JarvisApp(tk.Tk):
         tk.Label(header, text="COMMAND CENTER / v1.0", bg=theme.BACKGROUND, fg=theme.MUTED, font=(theme.MONO, 8)).pack(side="left", padx=15)
         self.clock = tk.Label(header, bg=theme.BACKGROUND, fg=theme.CYAN, font=(theme.MONO, 13, "bold"))
         self.clock.pack(side="right", padx=(15, 0))
-        provider = self.active_connection.provider.upper() if self.active_connection else "GEMINI"
+        badge, badge_color = self._connection_badge()
         self.connection = tk.Label(
-            header, text=f"● {provider} ONLINE" if self.ai else "● LOCAL MODE", bg=theme.PANEL,
-            fg=theme.GREEN if self.ai else theme.AMBER, font=(theme.MONO, 8, "bold"), padx=12, pady=7,
+            header, text=badge, bg=theme.PANEL,
+            fg=badge_color, font=(theme.MONO, 8, "bold"), padx=12, pady=7,
         )
         self.connection.pack(side="right")
         self.voice_button = GlowButton(header, "🔊 OVOZ: ON", self._toggle_voice, padx=9, pady=4, font=(theme.FONT, 8, "bold"))
@@ -211,7 +211,7 @@ class JarvisApp(tk.Tk):
         self.feed = tk.Text(feed.body, height=10, bg=theme.PANEL, fg=theme.TEXT, insertbackground=theme.CYAN, relief="flat", wrap="word", font=(theme.FONT, 9), state="disabled")
         self.feed.pack(fill="both", expand=True)
         self._add_feed("JARVIS tizimi ishga tushdi.", theme.GREEN)
-        self._add_feed("AI modeli: " + ("Gemini ulangan" if self.ai else "lokal rejim"), theme.CYAN)
+        self._add_feed('AI modeli: '+(f'{self.active_connection.provider} / {self.active_connection.model} [{self.active_connection.status}]' if self.ai and self.active_connection else 'lokal rejim'), theme.CYAN)
         self._add_feed("Buyruq kutilyapti...", theme.MUTED)
         self.task_panel = TaskPanel(right, self._approve_task, self._reject_task, self._clear_completed_tasks, retry=self._retry_office_task)
         self.task_panel.grid(row=1, column=0, sticky="nsew")
@@ -231,7 +231,7 @@ class JarvisApp(tk.Tk):
 
         routing = Panel(lower, "Task routing")
         routing.grid(row=0, column=1, sticky="nsew", padx=3)
-        self.route_status = tk.Label(routing.body, text="Gemini Chat AI: tayyor", bg=theme.PANEL, fg=theme.GREEN, font=(theme.MONO, 9, "bold"))
+        self.route_status = tk.Label(routing.body, text=f'{self.active_connection.provider if self.active_connection else "Local"} Chat AI', bg=theme.PANEL, fg=theme.GREEN, font=(theme.MONO, 9, "bold"))
         self.route_status.pack(anchor="w", pady=(8, 8))
         tk.Label(routing.body, text="Buyruqlar Gemini tomonidan tahlil qilinadi va mos agentga yuboriladi.", bg=theme.PANEL, fg=theme.MUTED, wraplength=220, justify="left", font=(theme.FONT, 9)).pack(anchor="w")
         GlowButton(routing.body, "AGENTLARNI BOSHQARISH", self._show_agents_section).pack(anchor="w", pady=(14, 0))
@@ -305,54 +305,52 @@ class JarvisApp(tk.Tk):
         threading.Thread(target=self._reply, args=(message,), daemon=True).start()
 
     def _reply(self, message: str) -> None:
-        conversion = local_conversion_intent(message) or local_computer_intent(message)
+        conversion = local_conversion_intent(message) or local_text_creation_intent(message) or local_computer_intent(message)
         if conversion is not None:
             self.events.put(("intent", conversion))
             return
         local_prefixes = ("yordam", "help", "soat nechchi", "vaqt", "time", "eslatma ol:", "eslatmalarim", "eslatmalar", "notes")
-        if self.ai and not message.casefold().startswith(local_prefixes):
-            for attempt in range(3):
-                try:
-                    intent = self.ai.interpret(message)
-                    intent = self._ground_theme_intent(message, intent)
-                    music_fallback = self._local_intent(message)
-                    if not intent.is_command and music_fallback and music_fallback.category == "media":
-                        intent = music_fallback
-                    if intent.is_command:
-                        if intent.command in OFFICE_ACTIONS:
-                            intent = self._validate_office_intent(message, intent)
-                        agent_key = ('files' if intent.command == 'computer_action' else "office" if intent.command in OFFICE_ACTIONS else {"browser": "browser", "computer": "desktop", "media": "music", "voice": "voice"}.get(intent.category, "automation"))
-                        assigned = self.connections.connection_for(agent_key)
-                        if agent_key != "office" and assigned and self.active_connection and assigned.id != self.active_connection.id:
-                            try:
-                                specialist = build_ai(assigned)
-                                candidate = specialist.interpret(message) if specialist else None
-                                allowed_for_agent = {
-                                    "browser": BROWSER_ACTIONS | {"open_url", "search_web", "workflow"},
-                                    "desktop": DESKTOP_ACTIONS | {"run_app", "workflow"},
-                                    "music": {"play_music", "stop_music", "close_music", "resume_music", "next_music", "previous_music", "volume_up", "volume_down"},
-                                    "voice": {"speak"},
-                                    'files': {'computer_action'},
-                                }.get(agent_key, set())
-                                if candidate and candidate.is_command and candidate.command in allowed_for_agent:
-                                    intent = candidate
-                                    self.events.put(("agent_note", f"{agent_key} agent buyruqni {assigned.label} bilan aniqlashtirdi."))
-                            except AIError as error:
-                                self.events.put(("agent_note", f"{agent_key} AI ulanishi javob bermadi: {error}. Default reja ishlatiladi."))
-                    intent = self._ground_theme_intent(message, intent)
-                    intent = ground_computer_intent(message, intent)
-                    self.events.put(("intent", intent))
-                    return
-                except AIError as error:
-                    if "(503)" in str(error) and attempt < 2:
-                        time.sleep(2 ** attempt)
-                        continue
-                    fallback = self._local_intent(message)
-                    if fallback:
-                        self.events.put(("intent", fallback))
-                    else:
-                        self.events.put(("provider_error", str(error)))
-                    return
+        ai = self.ai
+        connection = self.active_connection
+        if ai and not message.casefold().startswith(local_prefixes):
+            try:
+                options = {'progress': lambda note: self.events.put(('agent_note', note))} if isinstance(ai, (GeminiAI, OpenAICompatibleAI)) else {}
+                intent = ai.interpret(message, **options)
+                self.events.put(('connection_ready', connection.id if connection else ''))
+                intent = self._ground_theme_intent(message, intent)
+                music_fallback = self._local_intent(message)
+                if not intent.is_command and music_fallback and music_fallback.category == 'media':
+                    intent = music_fallback
+                if intent.is_command:
+                    if intent.command in OFFICE_ACTIONS:
+                        intent = self._validate_office_intent(message, intent)
+                    agent_key = ('files' if intent.command == 'computer_action' else 'office' if intent.command in OFFICE_ACTIONS else {'browser': 'browser', 'computer': 'desktop', 'media': 'music', 'voice': 'voice'}.get(intent.category, 'automation'))
+                    assigned = self.connections.connection_for(agent_key)
+                    if agent_key != 'office' and assigned and connection and assigned.id != connection.id:
+                        try:
+                            specialist = build_ai(assigned)
+                            candidate = specialist.interpret(message) if specialist else None
+                            allowed_for_agent = {
+                                'browser': BROWSER_ACTIONS | {'open_url', 'search_web', 'workflow'},
+                                'desktop': DESKTOP_ACTIONS | {'run_app', 'workflow'},
+                                'music': {'play_music', 'stop_music', 'close_music', 'resume_music', 'next_music', 'previous_music', 'volume_up', 'volume_down'},
+                                'voice': {'speak'}, 'files': {'computer_action'},
+                            }.get(agent_key, set())
+                            if candidate and candidate.is_command and candidate.command in allowed_for_agent:
+                                intent = candidate
+                                self.events.put(('agent_note', f'{agent_key} agent buyruqni {assigned.label} bilan aniqlashtirdi.'))
+                        except AIError as error:
+                            self.events.put(('connection_issue', (assigned.id, error)))
+                            self.events.put(('agent_note', f'{agent_key} AI ulanishi javob bermadi. Default reja ishlatiladi.'))
+                intent = ground_computer_intent(message, self._ground_theme_intent(message, intent))
+                self.events.put(('intent', intent))
+            except AIError as error:
+                fallback = self._local_intent(message)
+                self.events.put(('connection_issue', (connection.id if connection else '', error, bool(fallback))))
+                if fallback:
+                    self.events.put(('intent', fallback))
+                else:
+                    self.events.put(('provider_error', error))
             return
         response = self.agent.respond(message)
         self.events.put(("response", response.text))
@@ -558,6 +556,14 @@ class JarvisApp(tk.Tk):
         tk.Label(body, text="AGENTLARNI QO'SHISH VA BOSHQARISH", bg=theme.PANEL, fg=theme.CYAN_SOFT, font=(theme.MONO, 13, "bold")).pack(anchor="w")
         tk.Label(body, text="AI Connections orqali bitta provayder uchun bir nechta API kalit qo'shishingiz mumkin.", bg=theme.PANEL, fg=theme.MUTED, font=(theme.FONT, 9)).pack(anchor="w", pady=(4, 12))
         GlowButton(body, "+ AI CONNECTION QO'SHISH", lambda: AIProviderConnectionDialog(window, "gemini", self._connect_ai_provider)).pack(anchor="w", pady=(0, 10))
+        choices = {f'{item.label} · {item.id[:6]} [{item.status}]': item.id for item in self.connections.connections}
+        if choices:
+            current = next((label for label, key in choices.items() if key == self.connections.default_id), next(iter(choices)))
+            choice = tk.StringVar(value=current)
+            tk.Label(body, text='ASOSIY CHAT AI (avtomatik pulli almashtirish yo‘q)', bg=theme.PANEL, fg=theme.CYAN_SOFT, font=(theme.FONT, 9)).pack(anchor='w')
+            tk.OptionMenu(body, choice, *choices).pack(fill='x', pady=4)
+            GlowButton(body, 'TANLANGAN CHAT AI’NI FAOLLASHTIRISH', lambda: self._activate_connection(choices[choice.get()])).pack(fill='x', pady=(0, 8))
+        tk.Label(body, text='Gemini 429: loyiha/model kvotasini tekshiring. Yangi kalit kvotani yangilamasligi mumkin. 503: vaqtinchalik xizmat bandligi.', bg=theme.PANEL, fg=theme.AMBER, wraplength=510, justify='left', font=(theme.FONT, 8)).pack(fill='x', pady=(0, 7))
         list_body = self._scrollable_body(body)
         for agent in AGENTS:
             provider = agent.key in {"gemini", "openai", "groq", "openrouter"}
@@ -615,12 +621,46 @@ class JarvisApp(tk.Tk):
         added = self.connections.add(provider, model, api_key)
         if provider == "gemini":
             self.connections.set_default(added.id)
+        self._activate_connection(self.connections.default_id)
+        self.agent_panel.set_connected(provider, True, f'SOZLANGAN • {model} [{added.status}]')
+        self._add_feed(f'{provider.title()} ulanishi saqlandi: {model} [{added.status}]. Saqlashning o‘zi API/kvota tekshiruvi emas.', theme.CYAN)
+
+    def _connection_badge(self):
+        connection = self.active_connection
+        if not self.ai:
+            return '● LOCAL MODE', theme.AMBER
+        status = connection.status if connection else 'untested'
+        state = 'ONLINE' if status == 'ready' else 'CONFIGURED' if status == 'untested' else status.upper()
+        return f'● {connection.provider.upper() if connection else "AI"} {state}', theme.GREEN if status == 'ready' else theme.AMBER
+
+    def _activate_connection(self, connection_id):
+        self.connections.set_default(connection_id)
         self.active_connection = self.connections.default_connection()
         self.ai = build_ai(self.active_connection)
         self.agent.ai = self.ai
-        self.connection.configure(text=f"● {self.active_connection.provider.upper()} ONLINE", fg=theme.GREEN)
-        self.agent_panel.set_connected(provider, True, f"ULANGAN • {model}")
-        self._add_feed(f"{provider.title()} API kaliti qo'shildi: {model}", theme.GREEN)
+        badge, color = self._connection_badge()
+        self.connection.configure(text=badge, fg=color)
+        if hasattr(self, 'route_status'):
+            self.route_status.configure(text=self.active_connection.provider+' Chat AI', fg=color)
+        self._add_feed('Asosiy Chat AI: '+self.active_connection.label, theme.CYAN)
+
+    def _connection_issue(self, connection_id, error, announce=True):
+        if not connection_id or not self.connections.get(connection_id):
+            return
+        self.connections.mark_error(connection_id, error)
+        if self.active_connection and self.active_connection.id == connection_id:
+            badge, color = self._connection_badge()
+            self.connection.configure(text=badge, fg=color)
+        if announce:
+            self._add_feed(str(error), theme.AMBER)
+        if getattr(error, 'kind', '') == 'auth':
+            if messagebox.askyesno('API kalitini tekshirish', 'Provayder autentifikatsiya/kalit xatosini qaytardi. Kalitni lokal ro‘yxatdan olib tashlaymi? Kvota yoki oddiy ruxsat xatosi uchun bu savol chiqmaydi.', parent=self):
+                self.connections.remove(connection_id)
+                self.active_connection = self.connections.default_connection()
+                self.ai = build_ai(self.active_connection)
+                self.agent.ai = self.ai
+                badge, color = self._connection_badge()
+                self.connection.configure(text=badge, fg=color)
 
     def _approve_task(self, task_id: int) -> None:
         if self.tasks.get(task_id).status not in {PENDING_APPROVAL, PLANNED}:
@@ -637,22 +677,31 @@ class JarvisApp(tk.Tk):
         threading.Thread(target=self._execute_task, args=(task,), daemon=True).start()
 
     def _execute_task(self, task: Task) -> None:
+        office_connection = None
         try:
             if task.action == 'computer_action':
                 result = self.computer.run(json.loads(task.payload), approved=task.requires_approval)
                 self.events.put(('task_done', (task, COMPLETED, result)))
                 return
             if task.action in OFFICE_ACTIONS:
-                ai = build_ai(self.connections.connection_for("office")) if task.action == "office_create" else None
+                office_connection = self.connections.connection_for('office') if task.action == 'office_create' else None
+                ai = build_ai(office_connection) if task.action == 'office_create' else None
                 self.events.put(("agent_note", "Office Agent: " + ("AI mazmun yaratmoqda..." if task.action == "office_create" else "Fayl lokal konvertatsiya qilinmoqda...")))
                 result = self.office.run(task.action, json.loads(task.payload), ai=ai, allow_source_upload=task.requires_approval,
                     progress=lambda note: self.events.put(("task_progress", (task.id, note))))
                 self.events.put(("office_artifact", result))
+                if office_connection:
+                    self.events.put(('connection_ready', office_connection.id))
                 self.events.put(("task_done", (task, COMPLETED, result.summary)))
                 return
             action = "browser_open" if task.action == "open_url" else task.action
             result = execute_automation(action, task.payload) if action in BROWSER_ACTIONS | DESKTOP_ACTIONS | {"workflow"} else execute(task)
             self.events.put(("task_done", (task, COMPLETED, result)))
+        except AIError as error:
+            if office_connection:
+                self.events.put(('connection_ready', office_connection.id) if error.kind == 'refusal'
+                                else ('connection_issue', (office_connection.id, error)))
+            self.events.put(('task_done', (task, FAILED, str(error))))
         except ApplicationNotFound as error:
             self.events.put(('task_done', (task, FAILED, str(error))))
             self.events.put(('app_missing', error.name))
@@ -685,6 +734,14 @@ class JarvisApp(tk.Tk):
                     self._idle_later(3300)
                 elif kind == "agent_note":
                     self._add_feed(str(message), theme.CYAN)
+                elif kind == 'connection_issue':
+                    self._connection_issue(*message)
+                elif kind == 'connection_ready':
+                    if message:
+                        self.connections.mark_ready(message)
+                        if self.active_connection and self.active_connection.id == message:
+                            badge, color = self._connection_badge()
+                            self.connection.configure(text=badge, fg=color)
                 elif kind == 'metrics':
                     self._metrics_running = False
                     if message is not None:
@@ -748,17 +805,6 @@ class JarvisApp(tk.Tk):
                     self.reactor.set_state("idle", "AI JAVOBIDA XATO")
                     error = str(message)
                     self._add_feed("AI API: " + error, theme.RED)
-                    if self.active_connection:
-                        self.connections.mark_error(self.active_connection.id, error)
-                    if "(401)" in error or "(403)" in error:
-                        if messagebox.askyesno("API kaliti yaroqsiz", "API kaliti yaroqsiz yoki muddati tugagan. Uni lokal ro'yxatdan o'chiraymi?"):
-                            if self.active_connection:
-                                self.connections.remove(self.active_connection.id)
-                            self.active_connection = self.connections.default_connection()
-                            self.ai = build_ai(self.active_connection)
-                            self.agent.ai = self.ai
-                            label = f"● {self.active_connection.provider.upper()} ONLINE" if self.ai else "● LOCAL MODE"
-                            self.connection.configure(text=label, fg=theme.GREEN if self.ai else theme.AMBER)
                 elif kind == "task_done":
                     task, status, result = message  # type: ignore[misc]
                     if task.action == "speak" and status == FAILED:

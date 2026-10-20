@@ -8,11 +8,13 @@ import time
 from unittest.mock import patch
 
 from jarvis.office.service import OfficeService
+from jarvis.connections import ConnectionStore
 from jarvis.tasks import COMPLETED, FAILED, PENDING_APPROVAL, TaskPlanner, TaskStore
 from jarvis.ui.app import JarvisApp
 
 
 SPECS = {
+    'txt': {'title': 'JARVIS', 'text': 'JARVIS — raqamli hamroh,\nYordam berar har bir chog‘.\n'},
     "docx": {"title": "JARVIS sinovi", "sections": [{"heading": "Natija", "paragraphs": ["O'zbekcha matn va tahrirlanadigan hujjat."]}]},
     "xlsx": {"title": "Budjet namunasi", "sheets": [{"name": "Budjet", "headers": ["Nomi", "Summa"],
              "rows": [["Namuna A", 10], ["Namuna B", 20], ["Jami", None]],
@@ -38,8 +40,11 @@ def main():
     fake = FakeAI()
     checks = Path("data/office/checks")
     checks.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix="integration-", dir=checks) as directory, patch("jarvis.ui.app.build_ai", return_value=fake):
-        app = JarvisApp()
+    with tempfile.TemporaryDirectory(prefix="integration-", dir=checks) as directory, patch("jarvis.ui.app.build_ai", return_value=fake), patch('jarvis.ui.app.load_local_env'), patch.dict('os.environ', {'AI_API_KEY': '', 'GEMINI_API_KEY': ''}):
+        connections = ConnectionStore(Path(directory)/'connections.json')
+        connections.add('gemini', 'deterministic-test-only', 'fake-test-key')
+        with patch('jarvis.ui.app.ConnectionStore', return_value=connections):
+            app = JarvisApp()
         app.title("JARVIS • Office integration test")
         app.voice_enabled = False
         app.tasks.close()
@@ -75,13 +80,13 @@ def main():
             docx = next(path for path in app.office.artifacts() if path.suffix == ".docx")
             task = app._submit_office_task("office_convert", {"source": str(docx), "target_format": "txt"})
             wait_for(task.id)
-            assert fake.calls == 3  # Conversion did not invoke a provider.
+            assert fake.calls == 4  # Conversion did not invoke a provider.
             task = app._submit_office_task("office_create", {"format": "docx", "prompt": "Manbadan xulosa yarat", "source": str(docx)})
             assert app.tasks.get(task.id).status == PENDING_APPROVAL
-            assert fake.calls == 3
+            assert fake.calls == 4
             app._approve_task(task.id)  # Fake provider only: no source goes to a cloud service.
             wait_for(task.id)
-            assert fake.calls == 4
+            assert fake.calls == 5
             studio.geometry("780x630")
             app.geometry("980x620")
             app.update()

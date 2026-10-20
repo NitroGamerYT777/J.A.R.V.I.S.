@@ -118,7 +118,17 @@ Yon menyudagi **Agents** bo'limi API ulanishlarini qo'shish va agentlar holatini
 
 **Assignments** bo'limi esa har bir agentni (Browser, File, Automation va boshqalar) kerakli AI ulanishiga biriktiradi. Gemini foydalanuvchi xabarini avval `browser`, `computer`, `question` yoki `other` turiga ajratadi. Browser/computer taski mos agentga biriktiriladi; dastur amal xavfini tekshirib, oddiy ishni avtomatik bajaradi yoki Tasks panelida tasdiq kutadi.
 
-API 401 yoki 403 xatosi qaytarsa, JARVIS uni yaroqsiz yoki muddati tugagan deb belgilaydi va lokal kalit ro'yxatidan o'chirishga ruxsat so'raydi.
+Kalit saqlanishi hali ulanish tekshirildi degani emas: avval `untested`, muvaffaqiyatli so‘rovdan keyin `ready` bo‘ladi. 401 yoki provayderning aniq `API_KEY_INVALID/EXPIRED` xatosida kalitni olib tashlashga ruxsat so‘raladi; oddiy 403 — ruxsat/model muammosi, avtomatik “muddati tugagan” deyilmaydi. 429 alohida kvota/tezlik cheklovi sifatida, 503 esa vaqtinchalik xizmat bandligi sifatida ko‘rsatiladi. Qayta ayni kalitni qo‘shish xato holati yoki kvotani yangilamaydi.
+
+**Agents → ASOSIY CHAT AI → TANLANGAN CHAT AI’NI FAOLLASHTIRISH** bilan mavjud boshqa ulanishni qo‘lda tanlash mumkin. Office agentiga alohida ulanish biriktirilgan bo‘lsa, uni **Assignments** orqali ham o‘zgartiring. Boshqa provayder/modelga avtomatik, kutilmagan pulli so‘rov yuborilmaydi.
+
+### Gemini 503/429 va Desktop TXT
+
+Chat va Office so‘rovlarida vaqtinchalik 503/502/500 yoki qisqa rate-limit uchun ko‘pi bilan 4 ta urinish bor (odatda 2, 4, 8 soniya). `Retry-After` va Google `RetryInfo` kutish ko‘rsatmasi hisobga olinadi; 30 soniyadan uzoq kutish bo‘lsa erta qayta yubormaydi. Server kunlik/ajratilmagan kvotani aniq ko‘rsatsa avtomatik takrorlamaydi. Xom server javobi yoki API kalitli URL jurnalga chiqarilmaydi. Bu xizmat mavjudligi yoki yangi kvota kafolati emas; haqiqiy kvota/hisob sozlamalari provayder tomonida boshqariladi.
+
+`jarvis mavzusida she'r yoz va desktopda .txt qilib saqla` so‘rovi endi routerga qo‘shimcha API chaqirig‘isiz TXT yaratish taskiga aylanadi. Mazmun yaratishning o‘zi baribir ishlaydigan AI ulanishiga muhtoj. UTF-8 va she’r satrlari saqlanadi, Desktop manzili Windows orqali aniqlanadi, mavjud fayl ustiga yozilmaydi. **Office Studio → Matn • TXT** ham mavjud. AI javob bermasa yoki rad etsa bo‘sh/soxta hujjat yaratilmaydi. Provayderning mazmun filtrlari o‘chirilmaydi.
+
+[Gemini kvota sahifasi](https://ai.google.dev/gemini-api/docs/rate-limits) va [AI Studio kvota monitoringi](https://ai.dev/rate-limit) orqali o‘z loyiha/model holatingizni tekshiring.
 
 ## Agentlar va Tasks paneli
 

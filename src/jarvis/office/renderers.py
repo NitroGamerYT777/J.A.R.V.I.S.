@@ -491,10 +491,20 @@ def _pptx(spec: dict, stream: BytesIO) -> None:
     deck.save(stream)
 
 
+def _validate_txt(spec, budget):
+    _obj(spec, 'Matn fayli', {'title', 'text'})
+    _text(spec.get('title'), 'Hujjat nomi', budget, 220, required=True)
+    _text(spec.get('text'), 'Hujjat matni', budget, 100000, required=True)
+
+
+def _txt(spec, stream):
+    stream.write(spec['text'].encode('utf-8'))
+
+
 def validate_document(spec: dict, suffix: str) -> None:
-    validators = {".docx": _validate_docx, ".xlsx": _validate_xlsx, ".pptx": _validate_pptx}
+    validators = {".docx": _validate_docx, ".xlsx": _validate_xlsx, ".pptx": _validate_pptx, '.txt': _validate_txt}
     if suffix not in validators:
-        raise ValueError("Faqat .docx, .xlsx va .pptx fayllarini yaratish mumkin.")
+        raise ValueError("Faqat .docx, .xlsx, .pptx va .txt fayllarini yaratish mumkin.")
     validators[suffix](spec, [0])
 
 
@@ -502,9 +512,9 @@ def render_document(spec: dict, destination: Path) -> None:
     """Create a new DOCX/XLSX/PPTX, without ever overwriting an existing file."""
     destination = Path(destination)
     suffix = destination.suffix.lower()
-    renderers = {".docx": (_validate_docx, _docx), ".xlsx": (_validate_xlsx, _xlsx), ".pptx": (_validate_pptx, _pptx)}
+    renderers = {".docx": (_validate_docx, _docx), ".xlsx": (_validate_xlsx, _xlsx), ".pptx": (_validate_pptx, _pptx), '.txt': (_validate_txt, _txt)}
     if suffix not in renderers:
-        raise ValueError("Faqat .docx, .xlsx va .pptx fayllarini yaratish mumkin.")
+        raise ValueError("Faqat .docx, .xlsx, .pptx va .txt fayllarini yaratish mumkin.")
     if destination.exists():
         raise ValueError("Bunday fayl mavjud. Boshqa nom tanlang; mavjud fayl almashtirilmaydi.")
     if not destination.parent.is_dir():
